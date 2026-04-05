@@ -1,0 +1,2401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Macros" />
+  <meta name="theme-color" content="#fafaf9" />
+  <title>Macro Tracker</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    html, body { margin: 0; padding: 0; background: #fafaf9; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    #root { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+    .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: #78716c; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="loading-screen">Loading Macro Tracker...</div></div>
+
+  <script type="text/babel" data-presets="react">
+// === Auto-generated prelude (replaces ES module imports) ===
+const { useState, useEffect, useRef } = React;
+
+// === Inline Lucide icons (avoids CDN dependency) ===
+const makeIcon = (paths) => ({ className, ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    className={className} {...props}
+    dangerouslySetInnerHTML={{ __html: paths }} />
+);
+const Plus = makeIcon('<path d="M5 12h14"/><path d="M12 5v14"/>');
+const Trash2 = makeIcon('<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>');
+const RotateCcw = makeIcon('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>');
+const Check = makeIcon('<path d="M20 6 9 17l-5-5"/>');
+const Calendar = makeIcon('<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>');
+const TrendingUp = makeIcon('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>');
+const Target = makeIcon('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>');
+const Download = makeIcon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>');
+const ChevronLeft = makeIcon('<path d="m15 18-6-6 6-6"/>');
+const ChevronRight = makeIcon('<path d="m9 18 6-6-6-6"/>');
+const Heart = makeIcon('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/>');
+
+// === localStorage adapter that mimics window.storage API ===
+window.storage = {
+  get: async (key) => {
+    const value = localStorage.getItem(key);
+    if (value === null) throw new Error("Key not found");
+    return { key, value };
+  },
+  set: async (key, value) => {
+    localStorage.setItem(key, value);
+    return { key, value };
+  },
+  delete: async (key) => {
+    localStorage.removeItem(key);
+    return { key, deleted: true };
+  },
+  list: async (prefix) => {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!prefix || k.startsWith(prefix)) keys.push(k);
+    }
+    return { keys, prefix };
+  },
+};
+
+
+const GOAL_PRESETS = [
+  {
+    id: "aggressive",
+    name: "Aggressive Fat Loss",
+    subtitle: "~1.5 lbs/week · muscle-loss risk",
+    cal: 1750, protein: 210, carbs: 90, fat: 75,
+  },
+  {
+    id: "moderate",
+    name: "Moderate Fat Loss",
+    subtitle: "~1-1.2 lbs/week · sustainable",
+    cal: 2100, protein: 198, carbs: 120, fat: 90,
+  },
+  {
+    id: "recomp",
+    name: "Slow Loss / Recomp",
+    subtitle: "~0.5 lbs/week · build + lean",
+    cal: 2300, protein: 200, carbs: 170, fat: 95,
+  },
+  {
+    id: "maintenance",
+    name: "Maintenance",
+    subtitle: "hold current weight",
+    cal: 2650, protein: 190, carbs: 265, fat: 95,
+  },
+  {
+    id: "bulk",
+    name: "Lean Bulk",
+    subtitle: "~0.5 lbs/week gain · muscle",
+    cal: 3000, protein: 200, carbs: 350, fat: 100,
+  },
+];
+
+// Pre-loaded meals with per-unit macros for scaling
+const PRESET_MEALS = [
+  { name: "Eggs in butter", category: "Protein", unit: "egg", unitLabel: "eggs", cal: 100, protein: 6, carbs: 0.5, fat: 8, defaultQty: 4 },
+  { name: "Dutch Bros Protein Eagle (SF, ½ syrups)", category: "Drinks", unit: "drink", unitLabel: "medium", cal: 180, protein: 20, carbs: 12, fat: 5, defaultQty: 1 },
+  { name: "Shredded chicken", category: "Protein", unit: "oz", unitLabel: "oz", cal: 45.7, protein: 7.4, carbs: 0.4, fat: 1.3, defaultQty: 10 },
+  { name: "Costco chipotle chicken", category: "Protein", unit: "oz", unitLabel: "oz", cal: 45.7, protein: 7.4, carbs: 1.1, fat: 1.3, defaultQty: 12 },
+  { name: "Cooked rice", category: "Carbs", unit: "cup", unitLabel: "cups", cal: 200, protein: 4, carbs: 45, fat: 0.4, defaultQty: 0.5 },
+  { name: "Avocado", category: "Fats", unit: "avocado", unitLabel: "avocados", cal: 240, protein: 3, carbs: 13, fat: 22, defaultQty: 0.5 },
+  { name: "Fairlife protein shake", category: "Drinks", unit: "shake", unitLabel: "shakes", cal: 150, protein: 30, carbs: 5, fat: 2.5, defaultQty: 1 },
+  { name: "85/15 ground beef (cooked)", category: "Protein", unit: "oz", unitLabel: "oz", cal: 56.7, protein: 6.3, carbs: 0, fat: 3.3, defaultQty: 6 },
+  { name: "Turkey breast (cooked)", category: "Protein", unit: "oz", unitLabel: "oz", cal: 30, protein: 6.3, carbs: 0, fat: 0.3, defaultQty: 6 },
+  { name: "Vodka soda", category: "Alcohol", unit: "drink", unitLabel: "drinks", cal: 100, protein: 0, carbs: 0, fat: 0, defaultQty: 1 },
+  { name: "Wine (5oz glass)", category: "Alcohol", unit: "glass", unitLabel: "glasses", cal: 125, protein: 0, carbs: 4, fat: 0, defaultQty: 1 },
+];
+
+const CATEGORY_ORDER = ["Protein", "Carbs", "Fats", "Drinks", "Alcohol"];
+
+// Format a Date object as YYYY-MM-DD using LOCAL time components (not UTC)
+function formatLocalDate(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function MacroTracker() {
+  const [activeTab, setActiveTab] = useState("why");
+  const [goalIdx, setGoalIdx] = useState(1); // default: moderate
+  const [entries, setEntries] = useState([]);
+  const [weeklyData, setWeeklyData] = useState([]);
+  const [customName, setCustomName] = useState("");
+  const [customCal, setCustomCal] = useState("");
+  const [customProtein, setCustomProtein] = useState("");
+  const [customCarbs, setCustomCarbs] = useState("");
+  const [customFat, setCustomFat] = useState("");
+  const [customNotes, setCustomNotes] = useState("");
+  const [customCategory, setCustomCategory] = useState("auto");
+  const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState("");
+  const [portionModal, setPortionModal] = useState(null);
+  const [portionQty, setPortionQty] = useState(1);
+  const [customPresets, setCustomPresets] = useState([]);
+  const [saveAsPreset, setSaveAsPreset] = useState(false);
+  const [saveAsMeal, setSaveAsMeal] = useState(false);
+  const [hiddenPresets, setHiddenPresets] = useState([]);
+  const [usageCounts, setUsageCounts] = useState({});
+  const [exportText, setExportText] = useState("");
+  const [savedMeals, setSavedMeals] = useState([]);
+  const [mealBuilder, setMealBuilder] = useState(null); // { name, ingredients: [{meal, qty}] }
+  const [mealScaleModal, setMealScaleModal] = useState(null);
+  const [mealScale, setMealScale] = useState(1);
+  const [savedEntryIds, setSavedEntryIds] = useState(new Set());
+  const [selectedDate, setSelectedDate] = useState(() => formatLocalDate(new Date()));
+  const [showMantra, setShowMantra] = useState(true);
+  const [weeklyCommitment, setWeeklyCommitment] = useState("");
+  const [commitmentWeekStart, setCommitmentWeekStart] = useState("");
+  const [streakCount, setStreakCount] = useState(0);
+  const [goalSettings, setGoalSettings] = useState({
+    targetWeight: "240",
+    targetDate: "mid-May",
+    startWeight: "250",
+    lbsPerWeek: "1-1.2",
+    scanDate: "May 6",
+    vision: "The most magnetic, attractive version of yourself. 240 lbs with visible muscle definition.",
+    visionSubtext: "The body that shows up differently — in the gym, on dates, at work, in the mirror.",
+  });
+  const [showGoalEditModal, setShowGoalEditModal] = useState(false);
+
+  const today = formatLocalDate(new Date());
+  const storageKey = `macros:${selectedDate}`;
+  const activeGoal = GOAL_PRESETS[goalIdx];
+
+  const shiftDate = (days) => {
+    const d = new Date(selectedDate + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    setSelectedDate(formatLocalDate(d));
+  };
+
+  // Load entries when storageKey (selected date) changes
+  useEffect(() => {
+    let cancelled = false;
+    async function loadEntriesForDate() {
+      let loaded = [];
+      try {
+        const result = await window.storage.get(storageKey);
+        if (result && result.value) {
+          loaded = JSON.parse(result.value);
+        }
+      } catch (err) {
+        // No entries for this date
+      }
+      if (cancelled) return;
+      setEntries(loaded);
+      setSavedEntryIds(new Set(loaded.map((e) => e.id)));
+    }
+    loadEntriesForDate();
+    return () => { cancelled = true; };
+  }, [storageKey]);
+
+  // Load everything else on mount only
+  useEffect(() => {
+    async function loadAll() {
+      try {
+        const goalResult = await window.storage.get("goal-selection");
+        if (goalResult && goalResult.value) {
+          const saved = parseInt(goalResult.value, 10);
+          if (!isNaN(saved) && saved >= 0 && saved < GOAL_PRESETS.length) {
+            setGoalIdx(saved);
+          }
+        }
+      } catch (err) {}
+      try {
+        const presetsResult = await window.storage.get("custom-presets");
+        if (presetsResult && presetsResult.value) {
+          setCustomPresets(JSON.parse(presetsResult.value));
+        }
+      } catch (err) {}
+      try {
+        const usageResult = await window.storage.get("usage-counts");
+        if (usageResult && usageResult.value) {
+          setUsageCounts(JSON.parse(usageResult.value));
+        }
+      } catch (err) {}
+      try {
+        const mealsResult = await window.storage.get("saved-meals");
+        if (mealsResult && mealsResult.value) {
+          setSavedMeals(JSON.parse(mealsResult.value));
+        }
+      } catch (err) {}
+      try {
+        const hiddenResult = await window.storage.get("hidden-presets");
+        if (hiddenResult && hiddenResult.value) {
+          setHiddenPresets(JSON.parse(hiddenResult.value));
+        }
+      } catch (err) {}
+      try {
+        const commitResult = await window.storage.get("weekly-commitment");
+        if (commitResult && commitResult.value) {
+          const parsed = JSON.parse(commitResult.value);
+          setWeeklyCommitment(parsed.text || "");
+          setCommitmentWeekStart(parsed.weekStart || "");
+        }
+      } catch (err) {}
+      try {
+        const goalSettingsResult = await window.storage.get("goal-settings");
+        if (goalSettingsResult && goalSettingsResult.value) {
+          const parsed = JSON.parse(goalSettingsResult.value);
+          setGoalSettings((prev) => ({ ...prev, ...parsed }));
+        }
+      } catch (err) {}
+      setLoading(false);
+      hasLoadedRef.current = true;
+    }
+    loadAll();
+  }, []);
+
+  // Track if initial load has completed — prevents saving during mount
+  const hasLoadedRef = useRef(false);
+
+  // Save goal selection when user changes it (debounced)
+  // Uses a ref guard to skip the initial run after loading completes
+  const goalSaveGuardRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!goalSaveGuardRef.current) {
+      goalSaveGuardRef.current = true;
+      return;
+    }
+    const t = setTimeout(() => {
+      window.storage.set("goal-selection", String(goalIdx)).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [goalIdx, loading]);
+
+  // Save custom presets (debounced)
+  const presetsSaveGuardRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!presetsSaveGuardRef.current) {
+      presetsSaveGuardRef.current = true;
+      return;
+    }
+    const t = setTimeout(() => {
+      window.storage.set("custom-presets", JSON.stringify(customPresets)).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [customPresets, loading]);
+
+  // Save usage counts (debounced)
+  const usageSaveGuardRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!usageSaveGuardRef.current) {
+      usageSaveGuardRef.current = true;
+      return;
+    }
+    const t = setTimeout(() => {
+      window.storage.set("usage-counts", JSON.stringify(usageCounts)).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [usageCounts, loading]);
+
+  const [isLoadingDate, setIsLoadingDate] = useState(false);
+
+  // Save entries directly when they change. This is the pattern that works
+  // reliably in the artifact environment — direct await from event handlers,
+  // no setTimeout, no debouncing, no useEffect lifecycle complexity.
+  const saveInFlightRef = useRef(false);
+  const pendingEntriesRef = useRef(null);
+
+  const saveEntries = async (newEntries) => {
+    // If a save is already in flight, queue this one
+    if (saveInFlightRef.current) {
+      pendingEntriesRef.current = newEntries;
+      return;
+    }
+    saveInFlightRef.current = true;
+    try {
+      await window.storage.set(storageKey, JSON.stringify(newEntries));
+      setSaveStatus("Saved");
+      setTimeout(() => setSaveStatus(""), 1500);
+      setSavedEntryIds(new Set(newEntries.map((e) => e.id)));
+    } catch (err) {
+      const msg = err ? (err.message || err.toString() || "unknown") : "no err";
+      console.error("[MacroTracker] Storage save failed:", err, "key:", storageKey, "payload size:", JSON.stringify(newEntries).length);
+      setSaveStatus(`Save failed: ${msg}`);
+      setTimeout(() => setSaveStatus(""), 15000);
+    } finally {
+      saveInFlightRef.current = false;
+      // If changes were queued while saving, save the latest now
+      if (pendingEntriesRef.current !== null) {
+        const next = pendingEntriesRef.current;
+        pendingEntriesRef.current = null;
+        saveEntries(next);
+      }
+    }
+  };
+
+  // Update entries state AND save to storage in one call.
+  const updateEntries = (newEntries) => {
+    setEntries(newEntries);
+    saveEntries(newEntries);
+  };
+
+  // Load weekly data when switching to week or goal tab
+  useEffect(() => {
+    if (activeTab !== "week" && activeTab !== "goal" && activeTab !== "why") return;
+    async function loadWeek() {
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = formatLocalDate(d);
+        const key = `macros:${dateStr}`;
+        let dayEntries = [];
+        try {
+          const result = await window.storage.get(key);
+          if (result && result.value) {
+            dayEntries = JSON.parse(result.value);
+          }
+        } catch (err) {
+          // No data for this day
+        }
+        const cal = dayEntries.reduce((s, e) => s + e.cal, 0);
+        const protein = dayEntries.reduce((s, e) => s + e.protein, 0);
+        days.push({
+          date: dateStr,
+          dayName: d.toLocaleDateString("en-US", { weekday: "short" }),
+          dayNum: d.getDate(),
+          cal,
+          protein,
+          hasData: dayEntries.length > 0,
+          isToday: i === 0,
+        });
+      }
+      setWeeklyData(days);
+    }
+    loadWeek();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // Streak disabled - was causing save conflicts
+
+  const totalCal = entries.reduce((sum, e) => sum + e.cal, 0);
+  const totalProtein = entries.reduce((sum, e) => sum + e.protein, 0);
+  const totalCarbs = entries.reduce((sum, e) => sum + (e.carbs || 0), 0);
+  const totalFat = entries.reduce((sum, e) => sum + (e.fat || 0), 0);
+  const calRemaining = activeGoal.cal - totalCal;
+  const proteinRemaining = activeGoal.protein - totalProtein;
+  const carbsRemaining = activeGoal.carbs - totalCarbs;
+  const fatRemaining = activeGoal.fat - totalFat;
+
+  const calPct = Math.min((totalCal / activeGoal.cal) * 100, 100);
+  const proteinPct = Math.min((totalProtein / activeGoal.protein) * 100, 100);
+  const carbsPct = Math.min((totalCarbs / activeGoal.carbs) * 100, 100);
+  const fatPct = Math.min((totalFat / activeGoal.fat) * 100, 100);
+
+  const calOver = totalCal > activeGoal.cal;
+  const proteinHit = totalProtein >= activeGoal.protein;
+  const carbsOver = totalCarbs > activeGoal.carbs;
+  const fatOver = totalFat > activeGoal.fat;
+
+  // Coach recommendation based on time of day and current progress
+  const getCoachTake = () => {
+    if (selectedDate !== today) return null; // only for today
+    const now = new Date();
+    const hour = now.getHours();
+    const calRemaining = activeGoal.cal - totalCal;
+    const proteinRemaining = activeGoal.protein - totalProtein;
+
+    // Determine meal window
+    let window = "morning";
+    let mealsLeft = 3;
+    if (hour >= 5 && hour < 11) {
+      window = "morning";
+      mealsLeft = 3;
+    } else if (hour >= 11 && hour < 14) {
+      window = "midday";
+      mealsLeft = 2;
+    } else if (hour >= 14 && hour < 17) {
+      window = "afternoon";
+      mealsLeft = 2;
+    } else if (hour >= 17 && hour < 21) {
+      window = "evening";
+      mealsLeft = 1;
+    } else {
+      window = "late";
+      mealsLeft = 0;
+    }
+
+    // Nothing logged yet
+    if (entries.length === 0) {
+      if (window === "morning") return { tone: "neutral", msg: `Start with breakfast — 4 eggs (400 cal, 24P) or a shake to kick off protein. ${activeGoal.protein}g target for the day.` };
+      if (window === "midday") return { tone: "warn", msg: `No food logged yet and it's past lunch. Eat a full meal now — 10oz chicken, ½ cup rice, ½ avocado. Behind on protein.` };
+      if (window === "afternoon") return { tone: "warn", msg: `Half the day gone, nothing logged. Log what you ate or eat now. ${activeGoal.protein}g protein is the floor.` };
+      if (window === "evening") return { tone: "off", msg: `Nothing logged and it's dinner time. Either log retroactively or front-load protein now — shake + 10oz chicken minimum.` };
+      return { tone: "off", msg: `Late with nothing logged. If you ate today, go back and log it. If you didn't, drink a shake now and own tomorrow.` };
+    }
+
+    // Protein already hit
+    if (proteinHit) {
+      if (calRemaining < 0) return { tone: "warn", msg: `Protein locked in (${Math.round(totalProtein)}g ✓) but you're ${Math.abs(Math.round(calRemaining))} cal over. Stop eating. Water, tea, done.` };
+      if (calRemaining < 200) return { tone: "good", msg: `Protein hit, ${calRemaining} cal left. Light snack only if hungry — berries, Greek yogurt, nothing heavy.` };
+      return { tone: "good", msg: `Protein crushed (${Math.round(totalProtein)}g). ${calRemaining} cal in the bank. Use them on whatever you want within reason.` };
+    }
+
+    // Protein behind, figure out pacing
+    const proteinPerMealNeeded = mealsLeft > 0 ? Math.ceil(proteinRemaining / mealsLeft) : proteinRemaining;
+
+    if (window === "morning") {
+      return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein to go. Aim ~${proteinPerMealNeeded}g per remaining meal. Breakfast first — hit 24-30g now.` };
+    }
+    if (window === "midday") {
+      if (proteinRemaining > 140) return { tone: "warn", msg: `${Math.round(proteinRemaining)}g protein still needed and only 2 meals left. Lunch needs 10-12oz chicken minimum. No skipping dinner.` };
+      return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein to go across 2 meals. ~${proteinPerMealNeeded}g each. Lunch now: 10oz chicken + rice + avocado hits it.` };
+    }
+    if (window === "afternoon") {
+      return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein remaining. Add a shake now (30g) + hit dinner hard (6-8oz protein minimum).` };
+    }
+    if (window === "evening") {
+      if (proteinRemaining > 60) return { tone: "warn", msg: `${Math.round(proteinRemaining)}g protein in one dinner is tough. Need 8-10oz protein + shake. Push it.` };
+      if (proteinRemaining > 30) return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein left. Dinner with 6oz protein + shake closes it out.` };
+      return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein to hit target. Shake or small chicken portion and you're done.` };
+    }
+    // late
+    if (proteinRemaining > 30) return { tone: "warn", msg: `${Math.round(proteinRemaining)}g short with the day almost done. Shake now. Tomorrow start strong.` };
+    return { tone: "neutral", msg: `Close but ${Math.round(proteinRemaining)}g short. One shake closes it.` };
+  };
+
+  const coachTake = getCoachTake();
+
+  const openPortionModal = (meal) => {
+    setPortionModal(meal);
+    setPortionQty(meal.defaultQty);
+  };
+
+  const confirmPortion = () => {
+    if (!portionModal) return;
+    const qty = parseFloat(portionQty) || 0;
+    if (qty <= 0) return;
+    const displayQty = qty % 1 === 0 ? qty : qty;
+    const newEntries = [
+      ...entries,
+      {
+        name: `${displayQty} ${portionModal.unitLabel} ${portionModal.name.toLowerCase()}`,
+        cal: Math.round(portionModal.cal * qty),
+        protein: Math.round(portionModal.protein * qty * 10) / 10,
+        carbs: Math.round((portionModal.carbs || 0) * qty * 10) / 10,
+        fat: Math.round((portionModal.fat || 0) * qty * 10) / 10,
+        goal: activeGoal.name,
+        id: Date.now(),
+      },
+    ];
+    updateEntries(newEntries);
+    // Track usage — use name as key since that's stable across builds
+    const key = portionModal.name;
+    setUsageCounts({ ...usageCounts, [key]: (usageCounts[key] || 0) + 1 });
+    setPortionModal(null);
+  };
+
+  const addPreset = (meal) => {
+    updateEntries([...entries, { ...meal, id: Date.now() }]);
+  };
+
+  // Meal Builder helpers
+  const startMealBuilder = () => {
+    setMealBuilder({ name: "", ingredients: [] });
+  };
+
+  const addIngredientToBuilder = (meal, qty) => {
+    if (!mealBuilder) return;
+    setMealBuilder({
+      ...mealBuilder,
+      ingredients: [
+        ...mealBuilder.ingredients,
+        { meal, qty, id: Date.now() },
+      ],
+    });
+  };
+
+  const removeIngredientFromBuilder = (id) => {
+    if (!mealBuilder) return;
+    setMealBuilder({
+      ...mealBuilder,
+      ingredients: mealBuilder.ingredients.filter((i) => i.id !== id),
+    });
+  };
+
+  const saveMeal = () => {
+    if (!mealBuilder || !mealBuilder.name || mealBuilder.ingredients.length === 0) return;
+    // Calculate base totals (at 1x scale)
+    const totalCal = mealBuilder.ingredients.reduce(
+      (s, i) => s + i.meal.cal * i.qty, 0
+    );
+    const totalProtein = mealBuilder.ingredients.reduce(
+      (s, i) => s + i.meal.protein * i.qty, 0
+    );
+    const totalCarbs = mealBuilder.ingredients.reduce(
+      (s, i) => s + (i.meal.carbs || 0) * i.qty, 0
+    );
+    const totalFat = mealBuilder.ingredients.reduce(
+      (s, i) => s + (i.meal.fat || 0) * i.qty, 0
+    );
+
+    const newMeal = {
+      name: mealBuilder.name,
+      ingredients: mealBuilder.ingredients.map(i => ({
+        name: i.meal.name,
+        unitLabel: i.meal.unitLabel,
+        qty: i.qty,
+      })),
+      cal: Math.round(totalCal),
+      protein: Math.round(totalProtein * 10) / 10,
+      carbs: Math.round(totalCarbs * 10) / 10,
+      fat: Math.round(totalFat * 10) / 10,
+      id: `meal-${Date.now()}`,
+    };
+    const updated = [...savedMeals, newMeal];
+    setSavedMeals(updated);
+    window.storage.set("saved-meals", JSON.stringify(updated)).catch(() => {});
+    setMealBuilder(null);
+  };
+
+  const deleteMeal = (id) => {
+    const updated = savedMeals.filter((m) => m.id !== id);
+    setSavedMeals(updated);
+    window.storage.set("saved-meals", JSON.stringify(updated)).catch(() => {});
+  };
+
+  const openMealScaleModal = (meal) => {
+    setMealScaleModal(meal);
+    setMealScale(1);
+  };
+
+  const confirmMealLog = () => {
+    if (!mealScaleModal) return;
+    const scale = parseFloat(mealScale) || 0;
+    if (scale <= 0) return;
+    updateEntries([
+      ...entries,
+      {
+        name: scale === 1 ? mealScaleModal.name : `${scale}× ${mealScaleModal.name}`,
+        cal: Math.round(mealScaleModal.cal * scale),
+        protein: Math.round(mealScaleModal.protein * scale * 10) / 10,
+        carbs: Math.round(mealScaleModal.carbs * scale * 10) / 10,
+        fat: Math.round(mealScaleModal.fat * scale * 10) / 10,
+        goal: activeGoal.name,
+        id: Date.now(),
+      },
+    ]);
+    const key = `meal:${mealScaleModal.name}`;
+    setUsageCounts({ ...usageCounts, [key]: (usageCounts[key] || 0) + 1 });
+    setMealScaleModal(null);
+  };
+
+  const addCustom = () => {
+    if (!customName || !customCal) return;
+    const newEntry = {
+      name: customName,
+      cal: parseFloat(customCal) || 0,
+      protein: parseFloat(customProtein) || 0,
+      carbs: parseFloat(customCarbs) || 0,
+      fat: parseFloat(customFat) || 0,
+      notes: customNotes,
+      goal: activeGoal.name,
+      id: Date.now(),
+    };
+    updateEntries([...entries, newEntry]);
+
+    if (saveAsMeal) {
+      // Save as a complete one-shot meal to Saved Meals section
+      const cal = parseFloat(customCal) || 0;
+      const protein = parseFloat(customProtein) || 0;
+      const carbs = parseFloat(customCarbs) || 0;
+      const fat = parseFloat(customFat) || 0;
+      const newMeal = {
+        name: customName,
+        ingredients: [], // No ingredient breakdown for one-shot
+        cal: Math.round(cal),
+        protein: Math.round(protein * 10) / 10,
+        carbs: Math.round(carbs * 10) / 10,
+        fat: Math.round(fat * 10) / 10,
+        isOneShot: true,
+        id: `meal-${Date.now()}`,
+      };
+      const updatedMeals = [...savedMeals, newMeal];
+      setSavedMeals(updatedMeals);
+      // Delay save to avoid racing with entries save
+      setTimeout(() => {
+        window.storage.set("saved-meals", JSON.stringify(updatedMeals)).catch(() => {});
+      }, 200);
+    }
+
+    if (saveAsPreset) {
+      const cal = parseFloat(customCal) || 0;
+      const protein = parseFloat(customProtein) || 0;
+      const carbs = parseFloat(customCarbs) || 0;
+      const fat = parseFloat(customFat) || 0;
+
+      let category = customCategory;
+      if (customCategory === "auto") {
+        // Auto-categorize based on dominant macro
+        const proteinCal = protein * 4;
+        const carbsCal = carbs * 4;
+        const fatCal = fat * 9;
+        category = "Protein";
+        if (proteinCal >= carbsCal && proteinCal >= fatCal) {
+          category = "Protein";
+        } else if (carbsCal >= proteinCal && carbsCal >= fatCal) {
+          category = "Carbs";
+        } else if (fatCal > proteinCal && fatCal > carbsCal) {
+          category = "Fats";
+        }
+        if (protein === 0 && carbs === 0 && fat === 0 && cal > 0) {
+          category = "Alcohol";
+        }
+      }
+
+      const newPreset = {
+        name: customName,
+        category,
+        unit: "serving",
+        unitLabel: "servings",
+        cal,
+        protein,
+        carbs,
+        fat,
+        defaultQty: 1,
+        isCustom: true,
+        id: `custom-${Date.now()}`,
+      };
+      const updatedPresets = [...customPresets, newPreset];
+      setCustomPresets(updatedPresets);
+    }
+
+    setCustomName("");
+    setCustomCal("");
+    setCustomProtein("");
+    setCustomCarbs("");
+    setCustomFat("");
+    setCustomNotes("");
+    setCustomCategory("auto");
+    setSaveAsPreset(false);
+    setSaveAsMeal(false);
+  };
+
+  const removeCustomPreset = (id) => {
+    setCustomPresets(customPresets.filter((p) => p.id !== id));
+  };
+
+  const hidePreset = (name) => {
+    if (!hiddenPresets.includes(name)) {
+      const updated = [...hiddenPresets, name];
+      setHiddenPresets(updated);
+      window.storage.set("hidden-presets", JSON.stringify(updated)).catch(() => {});
+    }
+  };
+
+  const restoreAllPresets = () => {
+    setHiddenPresets([]);
+    window.storage.set("hidden-presets", JSON.stringify([])).catch(() => {});
+  };
+
+  const exportToCSV = async () => {
+    try {
+      const rows = [
+        ["Date", "Meal", "Calories", "Protein (g)", "Carbs (g)", "Fat (g)", "Goal"],
+      ];
+
+      // Try to get all historical days from storage
+      let allDaysData = [];
+      try {
+        const listResult = await window.storage.list("macros:");
+        if (listResult && listResult.keys && listResult.keys.length > 0) {
+          const sortedKeys = [...listResult.keys].sort();
+          for (const key of sortedKeys) {
+            const date = key.replace("macros:", "");
+            try {
+              const result = await window.storage.get(key);
+              if (result && result.value) {
+                const dayEntries = JSON.parse(result.value);
+                for (const entry of dayEntries) {
+                  allDaysData.push({ date, entry });
+                }
+              }
+            } catch (err) {
+              // Skip
+            }
+          }
+        }
+      } catch (err) {
+        // Fall back to today's entries only
+      }
+
+      // If storage list failed, use today's entries from state
+      if (allDaysData.length === 0 && entries.length > 0) {
+        for (const entry of entries) {
+          allDaysData.push({ date: today, entry });
+        }
+      }
+
+      if (allDaysData.length === 0) {
+        alert("No data to export yet. Log some meals first.");
+        return;
+      }
+
+      for (const { date, entry } of allDaysData) {
+        rows.push([
+          date,
+          entry.name || "",
+          Math.round(entry.cal || 0),
+          entry.protein || 0,
+          entry.carbs || 0,
+          entry.fat || 0,
+          entry.goal || "",
+        ]);
+      }
+
+      // Convert to CSV, escaping quotes and commas
+      const csv = rows
+        .map((row) =>
+          row
+            .map((cell) => {
+              const str = String(cell);
+              if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+                return `"${str.replace(/"/g, '""')}"`;
+              }
+              return str;
+            })
+            .join(",")
+        )
+        .join("\n");
+
+      // Try download first, but also show the text so user can copy on mobile
+      setExportText(csv);
+      try {
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        const exportDate = today;
+        link.href = url;
+        link.download = `macro-tracker-${exportDate}.csv`;
+        link.style.display = "none";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+      } catch (downloadErr) {
+        // Modal will show, user can copy manually
+      }
+    } catch (err) {
+      alert("Export failed: " + (err.message || "unknown error"));
+    }
+  };
+
+  const removeEntry = (id) => {
+    updateEntries(entries.filter((e) => e.id !== id));
+  };
+
+  const saveCommitment = (text) => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d.setDate(diff));
+    const weekStart = formatLocalDate(monday);
+    setWeeklyCommitment(text);
+    setCommitmentWeekStart(weekStart);
+    window.storage.set("weekly-commitment", JSON.stringify({ text, weekStart })).catch(() => {});
+  };
+
+  const resetDay = () => {
+    updateEntries([]);
+  };
+
+  const saveGoalSettings = (newSettings) => {
+    setGoalSettings(newSettings);
+    window.storage.set("goal-settings", JSON.stringify(newSettings)).catch(() => {});
+    setShowGoalEditModal(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <p className="text-stone-500">Loading today's log...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-stone-50 p-4 pb-24">
+      {/* Opening Mantra */}
+      {showMantra && (
+        <div
+          className="fixed inset-0 bg-stone-900 flex items-center justify-center z-[100] p-8 cursor-pointer"
+          onClick={() => setShowMantra(false)}
+        >
+          <div className="max-w-lg text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500 mb-8">
+              Before you log anything
+            </p>
+            <p className="text-2xl sm:text-3xl text-white leading-relaxed font-light mb-10">
+              I look in the mirror and I'm proud of who I am and how I look.
+              <br /><br />
+              I am a magnetic man — in body, mind, and presence.
+              <br /><br />
+              Every meal is a choice, and I make the choice that builds the man I'm becoming.
+              <br /><br />
+              <span className="font-semibold">I don't negotiate with my goals. I honor them.</span>
+            </p>
+            <p className="text-xs text-stone-500 uppercase tracking-wider">
+              Tap anywhere to continue
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-md mx-auto">
+        {/* Header */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <h1 className="text-2xl font-bold text-stone-900">Macro Tracker</h1>
+            <div className="flex items-center gap-2">
+              {saveStatus && !saveStatus.startsWith("Save failed") && (
+                <span className="text-xs text-stone-500 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> {saveStatus}
+                </span>
+              )}
+              <button
+                onClick={exportToCSV}
+                className="flex items-center gap-1 px-2.5 py-1.5 bg-white rounded-lg border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50 active:bg-stone-100 shadow-sm"
+                title="Export all data to CSV"
+              >
+                <Download className="w-3.5 h-3.5" /> Export
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => shiftDate(-1)}
+              className="p-1.5 bg-white border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50 active:bg-stone-100"
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-2 py-1 focus:outline-none focus:border-stone-400"
+            />
+            <button
+              onClick={() => shiftDate(1)}
+              className="p-1.5 bg-white border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50 active:bg-stone-100"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            {selectedDate !== today && (
+              <button
+                onClick={() => setSelectedDate(today)}
+                className="text-xs text-stone-500 hover:text-stone-700 underline"
+              >
+                Today
+              </button>
+            )}
+          </div>
+          <p className="text-[11px] text-stone-400 mt-1">
+            {new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" })}
+          </p>
+        </div>
+
+        {/* Save Error Banner */}
+        {saveStatus && saveStatus.startsWith("Save failed") && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-red-900 mb-1">⚠️ Logs not saving</p>
+            <p className="text-xs text-red-800 break-words">{saveStatus}</p>
+            <p className="text-[11px] text-red-700 mt-2">Check browser console (F12) for full details. Try refreshing the artifact.</p>
+          </div>
+        )}
+
+        {/* Tab Navigation */}
+        <div className="flex gap-1 mb-6 bg-white rounded-xl p-1 shadow-sm border border-stone-200">
+          <button
+            onClick={() => setActiveTab("why")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === "why"
+                ? "bg-stone-900 text-white"
+                : "text-stone-600 hover:bg-stone-50"
+            }`}
+          >
+            <Heart className="w-3.5 h-3.5" /> Why
+          </button>
+          <button
+            onClick={() => setActiveTab("today")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === "today"
+                ? "bg-stone-900 text-white"
+                : "text-stone-600 hover:bg-stone-50"
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5" /> {selectedDate === today ? "Today" : new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+          </button>
+          <button
+            onClick={() => setActiveTab("week")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === "week"
+                ? "bg-stone-900 text-white"
+                : "text-stone-600 hover:bg-stone-50"
+            }`}
+          >
+            <TrendingUp className="w-3.5 h-3.5" /> Week
+          </button>
+          <button
+            onClick={() => setActiveTab("goal")}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${
+              activeTab === "goal"
+                ? "bg-stone-900 text-white"
+                : "text-stone-600 hover:bg-stone-50"
+            }`}
+          >
+            <Target className="w-3.5 h-3.5" /> Goal
+          </button>
+        </div>
+
+        {activeTab === "today" && (
+          <div>
+        {/* Streak Banner */}
+        {streakCount > 0 && (
+          <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 mb-4 text-white shadow-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider opacity-90">
+                  Protein Streak
+                </p>
+                <p className="text-2xl font-bold">
+                  {streakCount} day{streakCount === 1 ? "" : "s"} 🔥
+                </p>
+              </div>
+              <p className="text-xs opacity-90 text-right max-w-[40%]">
+                Don't break the chain. One shake if you have to.
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* Progress Cards */}
+        <div className="space-y-3 mb-6">
+          {/* Calories */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+            <div className="flex justify-between items-baseline mb-2">
+              <span className="text-sm font-medium text-stone-600">Calories</span>
+              <span
+                className={`text-xs font-medium ${
+                  calOver ? "text-red-600" : "text-stone-500"
+                }`}
+              >
+                {calOver
+                  ? `${Math.abs(calRemaining)} over`
+                  : `${calRemaining} left`}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1 mb-2">
+              <span
+                className={`text-2xl font-bold ${
+                  calOver ? "text-red-600" : "text-stone-900"
+                }`}
+              >
+                {Math.round(totalCal)}
+              </span>
+              <span className="text-sm text-stone-400">/ {activeGoal.cal}</span>
+            </div>
+            <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  calOver ? "bg-red-500" : "bg-stone-900"
+                }`}
+                style={{ width: `${calPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Protein */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+            <div className="flex justify-between items-baseline mb-2">
+              <span className="text-sm font-medium text-stone-600">Protein</span>
+              <span
+                className={`text-xs font-medium ${
+                  proteinHit ? "text-emerald-600" : "text-stone-500"
+                }`}
+              >
+                {proteinHit
+                  ? "Target hit ✓"
+                  : `${Math.round(proteinRemaining)}g to go`}
+              </span>
+            </div>
+            <div className="flex items-baseline gap-1 mb-2">
+              <span
+                className={`text-2xl font-bold ${
+                  proteinHit ? "text-emerald-600" : "text-stone-900"
+                }`}
+              >
+                {Math.round(totalProtein)}g
+              </span>
+              <span className="text-sm text-stone-400">/ {activeGoal.protein}g</span>
+            </div>
+            <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all ${
+                  proteinHit ? "bg-emerald-500" : "bg-stone-900"
+                }`}
+                style={{ width: `${proteinPct}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Carbs & Fat (compact row) */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-stone-200">
+              <div className="flex justify-between items-baseline mb-1">
+                <span className="text-xs font-medium text-stone-600">Carbs</span>
+                <span className={`text-[10px] font-medium ${carbsOver ? "text-red-600" : "text-stone-400"}`}>
+                  {carbsOver ? `${Math.round(Math.abs(carbsRemaining))}g over` : `${Math.round(carbsRemaining)}g left`}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mb-1">
+                <span className={`text-lg font-bold ${carbsOver ? "text-red-600" : "text-stone-900"}`}>
+                  {Math.round(totalCarbs)}g
+                </span>
+                <span className="text-xs text-stone-400">/ {activeGoal.carbs}g</span>
+              </div>
+              <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${carbsOver ? "bg-red-500" : "bg-amber-500"}`}
+                  style={{ width: `${carbsPct}%` }}
+                />
+              </div>
+            </div>
+            <div className="bg-white rounded-2xl p-3 shadow-sm border border-stone-200">
+              <div className="flex justify-between items-baseline mb-1">
+                <span className="text-xs font-medium text-stone-600">Fat</span>
+                <span className={`text-[10px] font-medium ${fatOver ? "text-red-600" : "text-stone-400"}`}>
+                  {fatOver ? `${Math.round(Math.abs(fatRemaining))}g over` : `${Math.round(fatRemaining)}g left`}
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mb-1">
+                <span className={`text-lg font-bold ${fatOver ? "text-red-600" : "text-stone-900"}`}>
+                  {Math.round(totalFat)}g
+                </span>
+                <span className="text-xs text-stone-400">/ {activeGoal.fat}g</span>
+              </div>
+              <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${fatOver ? "bg-red-500" : "bg-sky-500"}`}
+                  style={{ width: `${fatPct}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Coach's Take */}
+        {coachTake && (
+          <div className={`rounded-2xl p-4 mb-6 border-2 ${
+            coachTake.tone === "good" ? "bg-emerald-50 border-emerald-200" :
+            coachTake.tone === "warn" ? "bg-amber-50 border-amber-200" :
+            coachTake.tone === "off" ? "bg-red-50 border-red-200" :
+            "bg-stone-900 border-stone-900 text-white"
+          }`}>
+            <p className={`text-[10px] font-semibold uppercase tracking-wider mb-1.5 ${
+              coachTake.tone === "good" ? "text-emerald-700" :
+              coachTake.tone === "warn" ? "text-amber-700" :
+              coachTake.tone === "off" ? "text-red-700" :
+              "text-stone-400"
+            }`}>
+              Coach's Take
+            </p>
+            <p className={`text-sm leading-relaxed ${
+              coachTake.tone === "neutral" ? "text-white" : "text-stone-900"
+            }`}>
+              {coachTake.msg}
+            </p>
+          </div>
+        )}
+
+        {/* Today's Entries */}
+        {entries.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide">
+                Today's Log
+              </h2>
+              <button
+                onClick={resetDay}
+                className="text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1"
+              >
+                <RotateCcw className="w-3 h-3" /> Clear
+              </button>
+            </div>
+            <div className="space-y-2">
+              {entries.map((entry) => {
+                const isSaved = savedEntryIds.has(entry.id);
+                return (
+                <div
+                  key={entry.id}
+                  className="bg-white rounded-xl p-3 shadow-sm border border-stone-200 flex items-center justify-between"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-stone-900 truncate">
+                        {entry.name}
+                      </p>
+                      {isSaved ? (
+                        <span className="text-[10px] text-emerald-600 flex items-center gap-0.5 flex-shrink-0">
+                          <Check className="w-3 h-3" /> Saved
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-amber-600 flex-shrink-0">
+                          Unsaved
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-stone-500">
+                      {Math.round(entry.cal)} cal · {entry.protein}P · {entry.carbs || 0}C · {entry.fat || 0}F
+                    </p>
+                    {entry.notes && (
+                      <p className="text-xs text-stone-400 italic mt-1 truncate">
+                        {entry.notes}
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => removeEntry(entry.id)}
+                    className="ml-3 p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Saved Meals */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide">
+              Saved Meals
+            </h2>
+            <button
+              onClick={startMealBuilder}
+              className="text-xs font-medium text-stone-600 bg-white px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 flex items-center gap-1"
+            >
+              <Plus className="w-3 h-3" /> Build Meal
+            </button>
+          </div>
+          {savedMeals.length === 0 ? (
+            <div className="bg-white rounded-xl p-4 border border-stone-200 border-dashed">
+              <p className="text-xs text-stone-400 text-center">
+                Combine ingredients into meals you eat often
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {[...savedMeals]
+                .sort((a, b) => (usageCounts[`meal:${b.name}`] || 0) - (usageCounts[`meal:${a.name}`] || 0))
+                .map((meal) => {
+                const useCount = usageCounts[`meal:${meal.name}`] || 0;
+                return (
+                  <div
+                    key={meal.id}
+                    className="w-full bg-white rounded-xl p-3 shadow-sm border border-stone-200 flex items-center justify-between"
+                  >
+                    <button
+                      onClick={() => openMealScaleModal(meal)}
+                      className="flex-1 min-w-0 text-left hover:opacity-70"
+                    >
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold text-stone-900 truncate">
+                          {meal.name}
+                        </p>
+                        {useCount >= 3 && (
+                          <span className="text-[10px] bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                            {useCount}×
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-stone-500 mt-0.5">
+                        {meal.cal} cal · {meal.protein}P · {meal.carbs}C · {meal.fat}F
+                      </p>
+                      {meal.ingredients && meal.ingredients.length > 0 && (
+                        <p className="text-[10px] text-stone-400 mt-0.5 truncate">
+                          {meal.ingredients.map(i => `${i.qty} ${i.unitLabel} ${i.name.toLowerCase()}`).join(" + ")}
+                        </p>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => deleteMeal(meal.id)}
+                      className="ml-2 p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Quick Add Presets */}
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
+            Quick Add
+          </h2>
+          {CATEGORY_ORDER.map((category) => {
+            const builtInMeals = PRESET_MEALS
+              .filter((m) => m.category === category)
+              .filter((m) => !hiddenPresets.includes(m.name));
+            const customMeals = customPresets.filter((m) => m.category === category);
+            const allMeals = [...builtInMeals, ...customMeals].sort(
+              (a, b) => (usageCounts[b.name] || 0) - (usageCounts[a.name] || 0)
+            );
+            if (allMeals.length === 0) return null;
+            return (
+              <div key={category} className="mb-4">
+                <h3 className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider mb-2 px-1">
+                  {category}
+                </h3>
+                <div className="space-y-2">
+                  {allMeals.map((meal, idx) => {
+                    const defaultCal = Math.round(meal.cal * meal.defaultQty);
+                    const defaultProtein = Math.round(meal.protein * meal.defaultQty * 10) / 10;
+                    const defaultCarbs = Math.round((meal.carbs || 0) * meal.defaultQty * 10) / 10;
+                    const defaultFat = Math.round((meal.fat || 0) * meal.defaultQty * 10) / 10;
+                    const useCount = usageCounts[meal.name] || 0;
+                    const displayName = meal.isCustom
+                      ? meal.name
+                      : `${meal.defaultQty} ${meal.unitLabel} ${meal.name.toLowerCase()}`;
+                    return (
+                      <div
+                        key={meal.id || idx}
+                        className="w-full bg-white rounded-xl p-3 shadow-sm border border-stone-200 flex items-center justify-between"
+                      >
+                        <button
+                          onClick={() => openPortionModal(meal)}
+                          className="flex-1 min-w-0 text-left hover:opacity-70"
+                        >
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-stone-900 truncate">
+                              {displayName}
+                            </p>
+                            {meal.isCustom && (
+                              <span className="text-[9px] bg-stone-900 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                Custom
+                              </span>
+                            )}
+                            {useCount >= 3 && (
+                              <span className="text-[10px] bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-full flex-shrink-0">
+                                {useCount}×
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-stone-500">
+                            {defaultCal} cal · {defaultProtein}P · {defaultCarbs}C · {defaultFat}F
+                          </p>
+                        </button>
+                        <button
+                          onClick={() =>
+                            meal.isCustom
+                              ? removeCustomPreset(meal.id)
+                              : hidePreset(meal.name)
+                          }
+                          className="ml-2 p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+          {hiddenPresets.length > 0 && (
+            <button
+              onClick={restoreAllPresets}
+              className="text-xs text-stone-500 hover:text-stone-700 underline mt-2"
+            >
+              Restore {hiddenPresets.length} hidden item{hiddenPresets.length > 1 ? "s" : ""}
+            </button>
+          )}
+        </div>
+
+        {/* Custom Entry */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+          <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
+            Custom Entry
+          </h2>
+          <div className="space-y-2">
+            <input
+              type="text"
+              placeholder="Food name"
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+            />
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Calories"
+                value={customCal}
+                onChange={(e) => setCustomCal(e.target.value)}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+              />
+              <input
+                type="number"
+                placeholder="Protein (g)"
+                value={customProtein}
+                onChange={(e) => setCustomProtein(e.target.value)}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+              />
+            </div>
+            <div className="flex gap-2">
+              <input
+                type="number"
+                placeholder="Carbs (g)"
+                value={customCarbs}
+                onChange={(e) => setCustomCarbs(e.target.value)}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+              />
+              <input
+                type="number"
+                placeholder="Fat (g)"
+                value={customFat}
+                onChange={(e) => setCustomFat(e.target.value)}
+                className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+              />
+            </div>
+            <textarea
+              placeholder="Notes (optional) — portions, prep method, restaurant, etc."
+              value={customNotes}
+              onChange={(e) => setCustomNotes(e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 resize-none"
+            />
+            <label className="flex items-center gap-2 cursor-pointer py-1">
+              <input
+                type="checkbox"
+                checked={saveAsPreset}
+                onChange={(e) => setSaveAsPreset(e.target.checked)}
+                className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500"
+              />
+              <span className="text-sm text-stone-700">
+                Save as individual quick add
+              </span>
+            </label>
+            {saveAsPreset && (
+              <div className="pl-6">
+                <label className="text-xs text-stone-500 mb-1 block">Category</label>
+                <select
+                  value={customCategory}
+                  onChange={(e) => setCustomCategory(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 bg-white"
+                >
+                  <option value="auto">Auto-detect</option>
+                  <option value="Protein">Protein</option>
+                  <option value="Carbs">Carbs</option>
+                  <option value="Fats">Fats</option>
+                  <option value="Drinks">Drinks</option>
+                  <option value="Alcohol">Alcohol</option>
+                </select>
+              </div>
+            )}
+            <label className="flex items-center gap-2 cursor-pointer py-1">
+              <input
+                type="checkbox"
+                checked={saveAsMeal}
+                onChange={(e) => setSaveAsMeal(e.target.checked)}
+                className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500"
+              />
+              <span className="text-sm text-stone-700">
+                Save as meal quick add
+              </span>
+            </label>
+            <button
+              onClick={addCustom}
+              disabled={!customName || !customCal}
+              className="w-full bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium disabled:bg-stone-300 disabled:cursor-not-allowed hover:bg-stone-800 transition-colors"
+            >
+              Add Entry
+            </button>
+          </div>
+        </div>
+          </div>
+        )}
+
+        {activeTab === "week" && (
+          <WeekView weeklyData={weeklyData} activeGoal={activeGoal} />
+        )}
+
+        {activeTab === "goal" && (
+          <GoalView
+            goalIdx={goalIdx}
+            setGoalIdx={setGoalIdx}
+            weeklyData={weeklyData}
+            activeGoal={activeGoal}
+          />
+        )}
+
+        {activeTab === "why" && <WhyView weeklyData={weeklyData} activeGoal={activeGoal} weeklyCommitment={weeklyCommitment} saveCommitment={saveCommitment} commitmentWeekStart={commitmentWeekStart} streakCount={streakCount} goalSettings={goalSettings} onEditGoal={() => setShowGoalEditModal(true)} />}
+      </div>
+
+      {/* Meal Builder Modal */}
+      {mealBuilder && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4"
+          onClick={() => setMealBuilder(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[85vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-stone-900 mb-3">Build a Meal</h3>
+            <input
+              type="text"
+              placeholder="Meal name (e.g., Lunch prep)"
+              value={mealBuilder.name}
+              onChange={(e) => setMealBuilder({ ...mealBuilder, name: e.target.value })}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 mb-3"
+            />
+
+            {/* Current ingredients */}
+            {mealBuilder.ingredients.length > 0 && (
+              <div className="mb-3 space-y-1">
+                <p className="text-xs font-semibold text-stone-600 uppercase tracking-wide">
+                  Ingredients
+                </p>
+                {mealBuilder.ingredients.map((ing) => (
+                  <div
+                    key={ing.id}
+                    className="flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-stone-900 truncate">
+                        {ing.qty} {ing.meal.unitLabel} {ing.meal.name.toLowerCase()}
+                      </p>
+                      <p className="text-xs text-stone-500">
+                        {Math.round(ing.meal.cal * ing.qty)} cal · {Math.round(ing.meal.protein * ing.qty * 10) / 10}P
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => removeIngredientFromBuilder(ing.id)}
+                      className="ml-2 p-1 text-stone-400 hover:text-red-500"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <div className="pt-2 border-t border-stone-100">
+                  <p className="text-xs text-stone-500">Total: {" "}
+                    <span className="font-semibold text-stone-900">
+                      {Math.round(mealBuilder.ingredients.reduce((s, i) => s + i.meal.cal * i.qty, 0))} cal · {" "}
+                      {Math.round(mealBuilder.ingredients.reduce((s, i) => s + i.meal.protein * i.qty, 0) * 10) / 10}P
+                    </span>
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Ingredient picker */}
+            <p className="text-xs font-semibold text-stone-600 uppercase tracking-wide mb-2">
+              Add Ingredients
+            </p>
+            <div className="flex-1 overflow-y-auto space-y-1 mb-3 border border-stone-100 rounded-lg p-2">
+              {PRESET_MEALS.map((meal, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => addIngredientToBuilder(meal, meal.defaultQty)}
+                  className="w-full text-left px-2 py-1.5 rounded hover:bg-stone-50 text-xs flex items-center justify-between"
+                >
+                  <span className="text-stone-700">
+                    {meal.defaultQty} {meal.unitLabel} {meal.name.toLowerCase()}
+                  </span>
+                  <Plus className="w-3 h-3 text-stone-400" />
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMealBuilder(null)}
+                className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveMeal}
+                disabled={!mealBuilder.name || mealBuilder.ingredients.length === 0}
+                className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium disabled:bg-stone-300 hover:bg-stone-800"
+              >
+                Save Meal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Meal Scale Modal */}
+      {mealScaleModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4"
+          onClick={() => setMealScaleModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-stone-900 mb-1">
+              {mealScaleModal.name}
+            </h3>
+            <p className="text-xs text-stone-500 mb-4">
+              Base: {mealScaleModal.cal} cal · {mealScaleModal.protein}P · {mealScaleModal.carbs}C · {mealScaleModal.fat}F
+            </p>
+
+            <label className="text-sm font-medium text-stone-700 mb-2 block">
+              Portion (1× = full meal)
+            </label>
+            <div className="flex items-center gap-3 mb-4">
+              <button
+                onClick={() => setMealScale(Math.max(0, (parseFloat(mealScale) || 0) - 0.25))}
+                className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                step="0.25"
+                min="0"
+                value={mealScale}
+                onChange={(e) => setMealScale(e.target.value)}
+                className="flex-1 text-center px-3 py-2 rounded-lg border border-stone-200 text-lg font-semibold focus:outline-none focus:border-stone-400"
+              />
+              <button
+                onClick={() => setMealScale((parseFloat(mealScale) || 0) + 0.25)}
+                className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200"
+              >
+                +
+              </button>
+            </div>
+
+            <div className="bg-stone-50 rounded-lg p-3 mb-4">
+              <p className="text-sm text-stone-600 mb-1">Will log:</p>
+              <p className="text-lg font-bold text-stone-900 mb-1">
+                {Math.round(mealScaleModal.cal * (parseFloat(mealScale) || 0))} cal
+              </p>
+              <p className="text-xs text-stone-500">
+                {Math.round(mealScaleModal.protein * (parseFloat(mealScale) || 0) * 10) / 10}g protein · {" "}
+                {Math.round(mealScaleModal.carbs * (parseFloat(mealScale) || 0) * 10) / 10}g carbs · {" "}
+                {Math.round(mealScaleModal.fat * (parseFloat(mealScale) || 0) * 10) / 10}g fat
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setMealScaleModal(null)}
+                className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmMealLog}
+                className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800"
+              >
+                Add to Log
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Export Modal */}
+      {exportText && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4"
+          onClick={() => setExportText("")}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[80vh] flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-stone-900 mb-1">Your Data (CSV)</h3>
+            <p className="text-xs text-stone-500 mb-3">
+              Long-press to select all, then copy. Paste into a Google Sheet (File → Import → Paste) or send to Claude.
+            </p>
+            <textarea
+              readOnly
+              value={exportText}
+              className="flex-1 w-full px-3 py-2 rounded-lg border border-stone-200 text-xs font-mono bg-stone-50 resize-none min-h-[200px]"
+              onFocus={(e) => e.target.select()}
+            />
+            <div className="flex gap-2 mt-3">
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(exportText);
+                    setSaveStatus("Copied");
+                    setTimeout(() => setSaveStatus(""), 2000);
+                  } catch (err) {
+                    // Clipboard API may not work, user can still long-press
+                  }
+                }}
+                className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800"
+              >
+                Copy to Clipboard
+              </button>
+              <button
+                onClick={() => setExportText("")}
+                className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Portion Modal */}
+      {portionModal && (
+        <div
+          className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4"
+          onClick={() => setPortionModal(null)}
+        >
+          <div
+            className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-bold text-stone-900 mb-1">
+              {portionModal.name}
+            </h3>
+            <p className="text-xs text-stone-500 mb-4">
+              {portionModal.cal} cal · {portionModal.protein}g protein per {portionModal.unit}
+            </p>
+
+            <label className="text-sm font-medium text-stone-700 mb-2 block">
+              How many {portionModal.unitLabel}?
+            </label>
+            <div className="flex items-center gap-3 mb-4">
+              <button
+                onClick={() => setPortionQty(Math.max(0, (parseFloat(portionQty) || 0) - 0.5))}
+                className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200 active:bg-stone-300"
+              >
+                −
+              </button>
+              <input
+                type="number"
+                step="0.5"
+                min="0"
+                value={portionQty}
+                onChange={(e) => setPortionQty(e.target.value)}
+                className="flex-1 text-center px-3 py-2 rounded-lg border border-stone-200 text-lg font-semibold focus:outline-none focus:border-stone-400"
+              />
+              <button
+                onClick={() => setPortionQty((parseFloat(portionQty) || 0) + 0.5)}
+                className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200 active:bg-stone-300"
+              >
+                +
+              </button>
+            </div>
+
+            <div className="bg-stone-50 rounded-lg p-3 mb-4">
+              <p className="text-sm text-stone-600 mb-1">Will log:</p>
+              <p className="text-lg font-bold text-stone-900 mb-1">
+                {Math.round(portionModal.cal * (parseFloat(portionQty) || 0))} cal
+              </p>
+              <p className="text-xs text-stone-500">
+                {Math.round(portionModal.protein * (parseFloat(portionQty) || 0) * 10) / 10}g protein · {" "}
+                {Math.round((portionModal.carbs || 0) * (parseFloat(portionQty) || 0) * 10) / 10}g carbs · {" "}
+                {Math.round((portionModal.fat || 0) * (parseFloat(portionQty) || 0) * 10) / 10}g fat
+              </p>
+            </div>
+
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPortionModal(null)}
+                className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmPortion}
+                className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800"
+              >
+                Add to Log
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Goal Modal */}
+      {showGoalEditModal && (
+        <GoalEditModal
+          goalSettings={goalSettings}
+          onSave={saveGoalSettings}
+          onCancel={() => setShowGoalEditModal(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+function GoalEditModal({ goalSettings, onSave, onCancel }) {
+  const [draft, setDraft] = useState(goalSettings);
+
+  const updateField = (field, value) => {
+    setDraft({ ...draft, [field]: value });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-bold text-stone-900 mb-4">Edit Goal</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-stone-600 mb-1 block">Target weight (lbs)</label>
+            <input
+              type="number"
+              value={draft.targetWeight}
+              onChange={(e) => updateField("targetWeight", e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-600 mb-1 block">Target date (e.g., "mid-May", "June 15")</label>
+            <input
+              type="text"
+              value={draft.targetDate}
+              onChange={(e) => updateField("targetDate", e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-600 mb-1 block">Starting weight (lbs)</label>
+            <input
+              type="number"
+              value={draft.startWeight}
+              onChange={(e) => updateField("startWeight", e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+              placeholder="e.g., 250"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-600 mb-1 block">Lbs per week pace (e.g., "1-1.2", "0.5")</label>
+            <input
+              type="text"
+              value={draft.lbsPerWeek}
+              onChange={(e) => updateField("lbsPerWeek", e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-600 mb-1 block">Scan date (e.g., "May 6")</label>
+            <input
+              type="text"
+              value={draft.scanDate}
+              onChange={(e) => updateField("scanDate", e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-600 mb-1 block">The Vision (main line)</label>
+            <textarea
+              value={draft.vision}
+              onChange={(e) => updateField("vision", e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 resize-none"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-stone-600 mb-1 block">The Vision (subtext)</label>
+            <textarea
+              value={draft.visionSubtext}
+              onChange={(e) => updateField("visionSubtext", e.target.value)}
+              rows={2}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 resize-none"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={onCancel}
+            className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(draft)}
+            className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800"
+          >
+            Save Goal
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WhyView({ weeklyData, activeGoal, weeklyCommitment, saveCommitment, commitmentWeekStart, streakCount, goalSettings, onEditGoal }) {
+  const [editingCommitment, setEditingCommitment] = useState(false);
+  const [commitmentDraft, setCommitmentDraft] = useState(weeklyCommitment || "");
+
+  // Check if commitment is from current week
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const currentMonday = new Date(now.setDate(diff));
+  const currentMondayYyyy = currentMonday.getFullYear();
+  const currentMondayMm = String(currentMonday.getMonth() + 1).padStart(2, "0");
+  const currentMondayDd = String(currentMonday.getDate()).padStart(2, "0");
+  const currentWeekStart = `${currentMondayYyyy}-${currentMondayMm}-${currentMondayDd}`;
+  const isCurrentWeek = commitmentWeekStart === currentWeekStart;
+  const displayCommitment = isCurrentWeek ? weeklyCommitment : "";
+
+  const loggedDays = weeklyData.filter((d) => d.hasData);
+  const avgCal = loggedDays.length > 0
+    ? Math.round(loggedDays.reduce((s, d) => s + d.cal, 0) / loggedDays.length)
+    : 0;
+  const avgProtein = loggedDays.length > 0
+    ? Math.round(loggedDays.reduce((s, d) => s + d.protein, 0) / loggedDays.length)
+    : 0;
+
+  // Determine alignment
+  let alignmentStatus = "nodata";
+  let alignmentMessage = "";
+
+  if (loggedDays.length === 0) {
+    alignmentStatus = "nodata";
+    alignmentMessage = "Start logging to see alignment with your goal.";
+  } else if (loggedDays.length < 3) {
+    alignmentStatus = "early";
+    alignmentMessage = `Only ${loggedDays.length} day${loggedDays.length === 1 ? "" : "s"} logged. Keep going — alignment builds with consistency.`;
+  } else {
+    const calOver = avgCal > activeGoal.cal + 150;
+    const proteinShort = avgProtein < activeGoal.protein - 20;
+    const calOk = avgCal <= activeGoal.cal + 150;
+    const proteinOk = avgProtein >= activeGoal.protein - 20;
+
+    if (calOk && proteinOk) {
+      alignmentStatus = "aligned";
+      alignmentMessage = "You're eating like the man you're building. Keep executing — momentum compounds.";
+    } else if (calOver && proteinShort) {
+      alignmentStatus = "off";
+      alignmentMessage = "Stop. You're eating more calories than you need AND less protein than you need. This is the exact combo that burns muscle and stalls fat loss. Every day you stay here is a day the mirror lies to you. Mid-May is 4 weeks out. The version of you at 240 with visible definition is watching. Don't make him wait longer because of a drink you didn't need or a meal you didn't log. Fix it this week. Starting with the next meal.";
+    } else if (calOver) {
+      alignmentStatus = "drift";
+      alignmentMessage = `You're ${avgCal - activeGoal.cal} cal over your target on average. Protein is solid — you're protecting the muscle. But the calories are the leak, and leaks sink goals. It's almost certainly weekend drift, alcohol, or "just one more" snacks. You know exactly where the problem is. The scale doesn't care about your excuses. Own this week.`;
+    } else if (proteinShort) {
+      alignmentStatus = "drift";
+      alignmentMessage = `You're short ${activeGoal.protein - avgProtein}g of protein daily. At a deficit with low protein, you lose muscle — which means the body underneath won't look the way you want when you hit 240. You built 108 lbs of muscle. Don't waste it by skipping a shake. Add protein to every meal this week, non-negotiable.`;
+    }
+  }
+
+  const statusStyles = {
+    aligned: "bg-emerald-50 border-emerald-200 text-emerald-900",
+    drift: "bg-amber-50 border-amber-200 text-amber-900",
+    off: "bg-red-50 border-red-200 text-red-900",
+    early: "bg-stone-50 border-stone-200 text-stone-900",
+    nodata: "bg-stone-50 border-stone-200 text-stone-600",
+  };
+
+  const statusLabels = {
+    aligned: "Aligned ✓",
+    drift: "Slight Drift",
+    off: "Off Track",
+    early: "Early Days",
+    nodata: "No Data",
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Alignment Status */}
+      <div className={`rounded-2xl p-5 border-2 ${statusStyles[alignmentStatus]}`}>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider opacity-70">
+            Eating vs Goal
+          </p>
+          <span className="text-xs font-bold uppercase tracking-wide">
+            {statusLabels[alignmentStatus]}
+          </span>
+        </div>
+        <p className="text-sm leading-relaxed">{alignmentMessage}</p>
+        {loggedDays.length > 0 && (
+          <p className="text-xs mt-3 opacity-70">
+            {loggedDays.length}-day avg: {avgCal} cal · {avgProtein}g protein
+          </p>
+        )}
+      </div>
+
+      {/* This Week's Commitment */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">
+            This Week's Commitment
+          </p>
+          {!editingCommitment && displayCommitment && (
+            <button
+              onClick={() => { setEditingCommitment(true); setCommitmentDraft(displayCommitment); }}
+              className="text-xs text-stone-500 hover:text-stone-700 underline"
+            >
+              Edit
+            </button>
+          )}
+        </div>
+        {editingCommitment || !displayCommitment ? (
+          <div>
+            <textarea
+              placeholder="This week I commit to... (e.g., Hit 198g protein every day. Max 2 drinks on Saturday. Prep Sunday at 2pm.)"
+              value={commitmentDraft}
+              onChange={(e) => setCommitmentDraft(e.target.value)}
+              rows={3}
+              className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400 resize-none mb-2"
+            />
+            <button
+              onClick={() => {
+                saveCommitment(commitmentDraft.trim());
+                setEditingCommitment(false);
+              }}
+              disabled={!commitmentDraft.trim()}
+              className="w-full bg-stone-900 text-white rounded-lg py-2 text-sm font-medium disabled:bg-stone-300 hover:bg-stone-800"
+            >
+              Lock It In
+            </button>
+          </div>
+        ) : (
+          <p className="text-base text-stone-900 leading-relaxed font-medium">
+            {displayCommitment}
+          </p>
+        )}
+      </div>
+
+      {/* The Goal */}
+      <div className="bg-stone-900 rounded-2xl p-5 text-white relative">
+        <div className="flex items-start justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-stone-400">
+            The Goal
+          </p>
+          <button
+            onClick={onEditGoal}
+            className="text-xs text-stone-400 hover:text-white underline"
+          >
+            Edit
+          </button>
+        </div>
+        <p className="text-2xl font-bold mb-1">{goalSettings.targetWeight} lbs by {goalSettings.targetDate}</p>
+        <p className="text-sm text-stone-300">
+          {goalSettings.startWeight && Number(goalSettings.startWeight) > Number(goalSettings.targetWeight)
+            ? `${Number(goalSettings.startWeight) - Number(goalSettings.targetWeight)} lbs down · `
+            : ""}{goalSettings.lbsPerWeek} lbs per week · InBody scan {goalSettings.scanDate}
+        </p>
+      </div>
+
+      {/* The Vision */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-3">
+          The Vision
+        </p>
+        <p className="text-base text-stone-900 leading-relaxed mb-3">
+          {goalSettings.vision}
+        </p>
+        <p className="text-sm text-stone-600 leading-relaxed">
+          {goalSettings.visionSubtext}
+        </p>
+      </div>
+
+      {/* Why It Matters */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-3">
+          Why It Matters
+        </p>
+        <div className="space-y-2 text-sm text-stone-700">
+          <p>• Confidence, dating, showing up fully in life</p>
+          <p>• Attracting abundance: love, wealth, opportunity, meaningful connections</p>
+          <p>• Breaking old cycles and patterns that no longer serve you</p>
+          <p>• Building a life that feels as good on the inside as it looks on the outside</p>
+        </div>
+      </div>
+
+      {/* The Truth */}
+      <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 mb-2">
+          Remember
+        </p>
+        <p className="text-sm text-stone-900 leading-relaxed">
+          Your muscle base is already built — 108 lbs of it. You're not building from scratch. You're uncovering what you've already earned.
+        </p>
+      </div>
+
+      {/* Non-Negotiables */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-3">
+          Non-Negotiables
+        </p>
+        <div className="space-y-2 text-sm text-stone-700">
+          <p>• 198g protein daily · protect the muscle</p>
+          <p>• Under 2,100 calories · create the deficit</p>
+          <p>• Lift 3x/week · progressive overload every session</p>
+          <p>• Orangetheory 2x/week · booked in advance</p>
+          <p>• Weekend drift is the enemy · own every Saturday</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+function GoalView({ goalIdx, setGoalIdx, weeklyData, activeGoal }) {
+  const loggedDays = weeklyData.filter((d) => d.hasData);
+  const avgCal =
+    loggedDays.length > 0
+      ? Math.round(loggedDays.reduce((s, d) => s + d.cal, 0) / loggedDays.length)
+      : 0;
+  const avgProtein =
+    loggedDays.length > 0
+      ? Math.round(loggedDays.reduce((s, d) => s + d.protein, 0) / loggedDays.length)
+      : 0;
+
+  // Alignment status for each metric
+  const calStatus =
+    loggedDays.length === 0
+      ? "nodata"
+      : avgCal > activeGoal.cal + 100
+      ? "over"
+      : avgCal < activeGoal.cal - 300
+      ? "under"
+      : "aligned";
+  const proteinStatus =
+    loggedDays.length === 0
+      ? "nodata"
+      : avgProtein >= activeGoal.protein - 10
+      ? "aligned"
+      : avgProtein >= activeGoal.protein - 30
+      ? "under"
+      : "way-under";
+
+  const statusColor = (s) => {
+    if (s === "aligned") return "text-emerald-600";
+    if (s === "over" || s === "way-under") return "text-red-600";
+    if (s === "under") return "text-amber-600";
+    return "text-stone-400";
+  };
+
+  const statusLabel = (s, diff, unit) => {
+    if (s === "nodata") return "No data yet";
+    if (s === "aligned") return "On target ✓";
+    if (s === "over") return `${Math.abs(diff)} ${unit} over`;
+    if (s === "under") return `${Math.abs(diff)} ${unit} under`;
+    if (s === "way-under") return `${Math.abs(diff)} ${unit} short`;
+    return "";
+  };
+
+  return (
+    <div>
+      {/* Goal Selector */}
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
+          Current Goal
+        </h2>
+        <div className="space-y-2">
+          {GOAL_PRESETS.map((goal, idx) => {
+            const isActive = idx === goalIdx;
+            return (
+              <button
+                key={goal.id}
+                onClick={() => setGoalIdx(idx)}
+                className={`w-full rounded-xl p-4 border-2 text-left transition-all ${
+                  isActive
+                    ? "bg-stone-900 border-stone-900 text-white"
+                    : "bg-white border-stone-200 hover:border-stone-400"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span
+                    className={`font-semibold text-sm ${
+                      isActive ? "text-white" : "text-stone-900"
+                    }`}
+                  >
+                    {goal.name}
+                  </span>
+                  {isActive && (
+                    <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full">
+                      Active
+                    </span>
+                  )}
+                </div>
+                <p
+                  className={`text-xs mb-2 ${
+                    isActive ? "text-stone-300" : "text-stone-500"
+                  }`}
+                >
+                  {goal.subtitle}
+                </p>
+                <div
+                  className={`text-xs ${
+                    isActive ? "text-stone-200" : "text-stone-600"
+                  }`}
+                >
+                  {goal.cal} cal · {goal.protein}P · {goal.carbs}C · {goal.fat}F
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Weekly Alignment */}
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">
+          7-Day Alignment
+        </h2>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+          {loggedDays.length === 0 ? (
+            <p className="text-sm text-stone-400 italic text-center py-4">
+              Log meals this week to see alignment
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-stone-500 mb-3">
+                Based on {loggedDays.length} logged {loggedDays.length === 1 ? "day" : "days"}
+              </p>
+              <div className="space-y-3">
+                {/* Calories */}
+                <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+                  <div>
+                    <p className="text-sm font-medium text-stone-900">Calories</p>
+                    <p className="text-xs text-stone-500">
+                      Avg {avgCal} · Target {activeGoal.cal}
+                    </p>
+                  </div>
+                  <span className={`text-sm font-semibold ${statusColor(calStatus)}`}>
+                    {statusLabel(calStatus, avgCal - activeGoal.cal, "cal")}
+                  </span>
+                </div>
+                {/* Protein */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-stone-900">Protein</p>
+                    <p className="text-xs text-stone-500">
+                      Avg {avgProtein}g · Target {activeGoal.protein}g
+                    </p>
+                  </div>
+                  <span className={`text-sm font-semibold ${statusColor(proteinStatus)}`}>
+                    {statusLabel(
+                      proteinStatus,
+                      avgProtein - activeGoal.protein,
+                      "g"
+                    )}
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Coaching Note */}
+      {loggedDays.length >= 3 && (
+        <div className="bg-stone-900 rounded-2xl p-4 text-white">
+          <h3 className="text-sm font-semibold mb-2 uppercase tracking-wide">
+            Coach Read
+          </h3>
+          <p className="text-sm text-stone-200 leading-relaxed">
+            {calStatus === "over" && proteinStatus === "aligned" && (
+              <>You're eating above target. Protein is solid — the leak is calories. Cut 150-200 from evening snacks or drinks.</>
+            )}
+            {calStatus === "over" && proteinStatus !== "aligned" && (
+              <>Calories up, protein down — that's a dangerous combo for muscle retention. Replace carb-heavy foods with lean protein.</>
+            )}
+            {calStatus === "aligned" && proteinStatus === "aligned" && (
+              <>Dialed in. Keep this consistency and the weight will move.</>
+            )}
+            {calStatus === "aligned" && proteinStatus !== "aligned" && (
+              <>Calories on point but protein short. Add a second shake or extra chicken at dinner.</>
+            )}
+            {calStatus === "under" && (
+              <>Eating below target. Good for fat loss, but watch energy and recovery. Don't under-eat yourself into burnout.</>
+            )}
+            {calStatus === "nodata" && <>Log consistently and I'll read your pattern.</>}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+function WeekView({ weeklyData, activeGoal }) {
+  const loggedDays = weeklyData.filter((d) => d.hasData);
+  const avgCal =
+    loggedDays.length > 0
+      ? Math.round(
+          loggedDays.reduce((s, d) => s + d.cal, 0) / loggedDays.length
+        )
+      : 0;
+  const avgProtein =
+    loggedDays.length > 0
+      ? Math.round(
+          loggedDays.reduce((s, d) => s + d.protein, 0) / loggedDays.length
+        )
+      : 0;
+  const proteinHitCount = loggedDays.filter((d) => d.protein >= activeGoal.protein)
+    .length;
+  const calUnderCount = loggedDays.filter((d) => d.cal <= activeGoal.cal && d.cal > 0)
+    .length;
+
+  const maxCal = Math.max(
+    ...weeklyData.map((d) => d.cal),
+    activeGoal.cal
+  );
+
+  return (
+    <div>
+      {/* Summary Stats */}
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+          <p className="text-xs text-stone-500 mb-1">Avg Calories</p>
+          <p className="text-2xl font-bold text-stone-900">{avgCal}</p>
+          <p className="text-xs text-stone-400 mt-1">
+            Target: {activeGoal.cal}
+          </p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+          <p className="text-xs text-stone-500 mb-1">Avg Protein</p>
+          <p className="text-2xl font-bold text-stone-900">{avgProtein}g</p>
+          <p className="text-xs text-stone-400 mt-1">
+            Target: {activeGoal.protein}g
+          </p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+          <p className="text-xs text-stone-500 mb-1">Hit {activeGoal.protein}g Protein</p>
+          <p className="text-2xl font-bold text-emerald-600">
+            {proteinHitCount}/{loggedDays.length}
+          </p>
+          <p className="text-xs text-stone-400 mt-1">Days on target</p>
+        </div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+          <p className="text-xs text-stone-500 mb-1">Under {activeGoal.cal}</p>
+          <p className="text-2xl font-bold text-emerald-600">
+            {calUnderCount}/{loggedDays.length}
+          </p>
+          <p className="text-xs text-stone-400 mt-1">Days under cal cap</p>
+        </div>
+      </div>
+
+      {/* Daily Breakdown */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 mb-6">
+        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-4">
+          Last 7 Days
+        </h2>
+        <div className="space-y-3">
+          {weeklyData.map((day) => {
+            const calPct = (day.cal / maxCal) * 100;
+            const proteinPct = Math.min(
+              (day.protein / activeGoal.protein) * 100,
+              100
+            );
+            const calOver = day.cal > activeGoal.cal;
+            const proteinHit = day.protein >= activeGoal.protein;
+
+            return (
+              <div key={day.date}>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`text-sm font-medium ${
+                        day.isToday ? "text-stone-900" : "text-stone-600"
+                      }`}
+                    >
+                      {day.dayName} {day.dayNum}
+                      {day.isToday && (
+                        <span className="ml-1 text-xs text-stone-400">
+                          (today)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  {day.hasData ? (
+                    <span className="text-xs text-stone-500">
+                      <span
+                        className={calOver ? "text-red-600 font-medium" : ""}
+                      >
+                        {Math.round(day.cal)}
+                      </span>
+                      {" cal · "}
+                      <span
+                        className={
+                          proteinHit ? "text-emerald-600 font-medium" : ""
+                        }
+                      >
+                        {Math.round(day.protein)}g
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-stone-400 italic">
+                      No data
+                    </span>
+                  )}
+                </div>
+                {day.hasData && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          calOver ? "bg-red-500" : "bg-stone-900"
+                        }`}
+                        style={{ width: `${calPct}%` }}
+                      />
+                    </div>
+                    <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${
+                          proteinHit ? "bg-emerald-500" : "bg-stone-400"
+                        }`}
+                        style={{ width: `${proteinPct}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 text-xs text-stone-500">
+        <div className="flex items-center gap-2 mb-2">
+          <div className="w-3 h-1.5 bg-stone-900 rounded-full"></div>
+          <span>Calories (red if over {activeGoal.cal})</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-3 h-1.5 bg-emerald-500 rounded-full"></div>
+          <span>Protein (green if {activeGoal.protein}g+ hit)</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+    const container = document.getElementById("root");
+    const root = ReactDOM.createRoot(container);
+    root.render(React.createElement(MacroTracker));
+  </script>
+</body>
+</html>
