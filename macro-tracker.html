@@ -1,0 +1,2746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Macros" />
+  <meta name="theme-color" content="#fafaf9" />
+  <title>Macro Tracker</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    html, body { margin: 0; padding: 0; background: #fafaf9; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    #root { padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom); }
+    .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: #78716c; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div id="root"><div class="loading-screen">Loading Macro Tracker...</div></div>
+
+  <script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef } = React;
+
+const makeIcon = (paths) => ({ className, ...props }) => (
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+    className={className} {...props}
+    dangerouslySetInnerHTML={{ __html: paths }} />
+);
+const Plus = makeIcon('<path d="M5 12h14"/><path d="M12 5v14"/>');
+const Trash2 = makeIcon('<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/>');
+const RotateCcw = makeIcon('<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/>');
+const Check = makeIcon('<path d="M20 6 9 17l-5-5"/>');
+const Calendar = makeIcon('<rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/>');
+const TrendingUp = makeIcon('<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>');
+const Target = makeIcon('<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>');
+const Download = makeIcon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>');
+const ChevronLeft = makeIcon('<path d="m15 18-6-6 6-6"/>');
+const ChevronRight = makeIcon('<path d="m9 18 6-6-6-6"/>');
+const Heart = makeIcon('<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7Z"/>');
+const Scale = makeIcon('<path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/>');
+const Pencil = makeIcon('<path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>');
+
+const NOTES_MAX = 200;
+
+window.storage = {
+  get: async (key) => {
+    const value = localStorage.getItem(key);
+    if (value === null) throw new Error("Key not found");
+    return { key, value };
+  },
+  set: async (key, value) => {
+    localStorage.setItem(key, value);
+    return { key, value };
+  },
+  delete: async (key) => {
+    localStorage.removeItem(key);
+    return { key, deleted: true };
+  },
+  list: async (prefix) => {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!prefix || k.startsWith(prefix)) keys.push(k);
+    }
+    return { keys, prefix };
+  },
+};
+
+
+const GOAL_PRESETS = [
+  {
+    id: "aggressive",
+    name: "Aggressive Fat Loss",
+    subtitle: "~1.5 lbs/week · muscle-loss risk",
+    cal: 1750, protein: 210, carbs: 90, fat: 75,
+  },
+  {
+    id: "moderate",
+    name: "Moderate Fat Loss",
+    subtitle: "~1-1.2 lbs/week · sustainable",
+    cal: 2100, protein: 198, carbs: 120, fat: 90,
+  },
+  {
+    id: "recomp",
+    name: "Slow Loss / Recomp",
+    subtitle: "~0.5 lbs/week · build + lean",
+    cal: 2300, protein: 200, carbs: 170, fat: 95,
+  },
+  {
+    id: "maintenance",
+    name: "Maintenance",
+    subtitle: "hold current weight",
+    cal: 2650, protein: 190, carbs: 265, fat: 95,
+  },
+  {
+    id: "bulk",
+    name: "Lean Bulk",
+    subtitle: "~0.5 lbs/week gain · muscle",
+    cal: 3000, protein: 200, carbs: 350, fat: 100,
+  },
+];
+
+const PRESET_MEALS = [
+  { name: "Eggs in butter", category: "Protein", unit: "egg", unitLabel: "eggs", cal: 100, protein: 6, carbs: 0.5, fat: 8, defaultQty: 4 },
+  { name: "Dutch Bros Protein Eagle (SF, ½ syrups)", category: "Drinks", unit: "drink", unitLabel: "medium", cal: 180, protein: 20, carbs: 12, fat: 5, defaultQty: 1 },
+  { name: "Shredded chicken", category: "Protein", unit: "oz", unitLabel: "oz", cal: 45.7, protein: 7.4, carbs: 0.4, fat: 1.3, defaultQty: 10 },
+  { name: "Costco chipotle chicken", category: "Protein", unit: "oz", unitLabel: "oz", cal: 45.7, protein: 7.4, carbs: 1.1, fat: 1.3, defaultQty: 12 },
+  { name: "Cooked rice", category: "Carbs", unit: "cup", unitLabel: "cups", cal: 200, protein: 4, carbs: 45, fat: 0.4, defaultQty: 0.5 },
+  { name: "Avocado", category: "Fats", unit: "avocado", unitLabel: "avocados", cal: 240, protein: 3, carbs: 13, fat: 22, defaultQty: 0.5 },
+  { name: "Fairlife protein shake", category: "Drinks", unit: "shake", unitLabel: "shakes", cal: 150, protein: 30, carbs: 5, fat: 2.5, defaultQty: 1 },
+  { name: "85/15 ground beef (cooked)", category: "Protein", unit: "oz", unitLabel: "oz", cal: 56.7, protein: 6.3, carbs: 0, fat: 3.3, defaultQty: 6 },
+  { name: "Turkey breast (cooked)", category: "Protein", unit: "oz", unitLabel: "oz", cal: 30, protein: 6.3, carbs: 0, fat: 0.3, defaultQty: 6 },
+  { name: "Vodka soda", category: "Alcohol", unit: "drink", unitLabel: "drinks", cal: 100, protein: 0, carbs: 0, fat: 0, defaultQty: 1 },
+  { name: "Wine (5oz glass)", category: "Alcohol", unit: "glass", unitLabel: "glasses", cal: 125, protein: 0, carbs: 4, fat: 0, defaultQty: 1 },
+];
+
+const CATEGORY_ORDER = ["Protein", "Carbs", "Fats", "Drinks", "Alcohol"];
+
+function formatLocalDate(d) {
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function MacroTracker() {
+  const [activeTab, setActiveTab] = useState("why");
+  const [goalIdx, setGoalIdx] = useState(1);
+  const [entries, setEntries] = useState([]);
+  const [weeklyData, setWeeklyData] = useState([]);
+  const [customName, setCustomName] = useState("");
+  const [customCal, setCustomCal] = useState("");
+  const [customProtein, setCustomProtein] = useState("");
+  const [customCarbs, setCustomCarbs] = useState("");
+  const [customFat, setCustomFat] = useState("");
+  const [customNotes, setCustomNotes] = useState("");
+  const [customCategory, setCustomCategory] = useState("auto");
+  const [customUnit, setCustomUnit] = useState("oz");
+  const [customQty, setCustomQty] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saveStatus, setSaveStatus] = useState("");
+  const [portionModal, setPortionModal] = useState(null);
+  const [portionQty, setPortionQty] = useState(1);
+  const [customPresets, setCustomPresets] = useState([]);
+  const [saveAsPreset, setSaveAsPreset] = useState(false);
+  const [saveAsMeal, setSaveAsMeal] = useState(false);
+  const [hiddenPresets, setHiddenPresets] = useState([]);
+  const [usageCounts, setUsageCounts] = useState({});
+  const [exportText, setExportText] = useState("");
+  const [savedMeals, setSavedMeals] = useState([]);
+  const [mealBuilder, setMealBuilder] = useState(null);
+  const [ingredientPickerModal, setIngredientPickerModal] = useState(null);
+  const [ingredientPickerQty, setIngredientPickerQty] = useState(1);
+  const [mealScaleModal, setMealScaleModal] = useState(null);
+  const [mealScale, setMealScale] = useState(1);
+  const [editMealModal, setEditMealModal] = useState(null); // draft of meal being edited
+  const [editMealShowPicker, setEditMealShowPicker] = useState(false); // 'false' | 'list' | 'custom'
+  const [editMealCustomIng, setEditMealCustomIng] = useState({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz" });
+  const [builderShowCustomForm, setBuilderShowCustomForm] = useState(false);
+  const [builderCustomIng, setBuilderCustomIng] = useState({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz", saveToQuickAdd: false, category: "auto" });
+  const [editMealCustomIngSaveToQuickAdd, setEditMealCustomIngSaveToQuickAdd] = useState(false);
+  const [savedEntryIds, setSavedEntryIds] = useState(new Set());
+  const [inbodyScans, setInbodyScans] = useState([]);
+  const [scanModal, setScanModal] = useState(null);
+  const [compareScanId, setCompareScanId] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(() => formatLocalDate(new Date()));
+  const [showMantra, setShowMantra] = useState(true);
+  const [weeklyCommitment, setWeeklyCommitment] = useState("");
+  const [commitmentWeekStart, setCommitmentWeekStart] = useState("");
+  const [streakCount, setStreakCount] = useState(0);
+  const [goalSettings, setGoalSettings] = useState({
+    targetWeight: "240",
+    targetDate: "mid-May",
+    startWeight: "250",
+    lbsPerWeek: "1-1.2",
+    scanDate: "May 6",
+    vision: "The most magnetic, attractive version of yourself. 240 lbs with visible muscle definition.",
+    visionSubtext: "The body that shows up differently — in the gym, on dates, at work, in the mirror.",
+  });
+  const [showGoalEditModal, setShowGoalEditModal] = useState(false);
+
+  const today = formatLocalDate(new Date());
+  const storageKey = `macros:${selectedDate}`;
+  const activeGoal = GOAL_PRESETS[goalIdx];
+
+  const shiftDate = (days) => {
+    const d = new Date(selectedDate + "T00:00:00");
+    d.setDate(d.getDate() + days);
+    setSelectedDate(formatLocalDate(d));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadEntriesForDate() {
+      let loaded = [];
+      try {
+        const result = await window.storage.get(storageKey);
+        if (result && result.value) {
+          loaded = JSON.parse(result.value);
+        }
+      } catch (err) {}
+      if (cancelled) return;
+      setEntries(loaded);
+      setSavedEntryIds(new Set(loaded.map((e) => e.id)));
+    }
+    loadEntriesForDate();
+    return () => { cancelled = true; };
+  }, [storageKey]);
+
+  useEffect(() => {
+    async function loadAll() {
+      try {
+        const goalResult = await window.storage.get("goal-selection");
+        if (goalResult && goalResult.value) {
+          const saved = parseInt(goalResult.value, 10);
+          if (!isNaN(saved) && saved >= 0 && saved < GOAL_PRESETS.length) {
+            setGoalIdx(saved);
+          }
+        }
+      } catch (err) {}
+      try {
+        const presetsResult = await window.storage.get("custom-presets");
+        if (presetsResult && presetsResult.value) {
+          const loaded = JSON.parse(presetsResult.value);
+          // Normalize: ensure every preset has a valid category
+          const validCategories = ["Protein", "Carbs", "Fats", "Drinks", "Alcohol"];
+          const normalized = loaded.map(p => {
+            if (!p.category || !validCategories.includes(p.category)) {
+              // Auto-detect from macros
+              const pCal = (p.protein || 0) * 4 * (p.defaultQty || 1);
+              const cCal = (p.carbs || 0) * 4 * (p.defaultQty || 1);
+              const fCal = (p.fat || 0) * 9 * (p.defaultQty || 1);
+              let cat = "Protein";
+              if (fCal > pCal && fCal > cCal) cat = "Fats";
+              else if (cCal > pCal && cCal > fCal) cat = "Carbs";
+              return { ...p, category: cat };
+            }
+            return p;
+          });
+          setCustomPresets(normalized);
+          // Persist the normalized version
+          if (normalized.some((p, i) => p.category !== loaded[i].category)) {
+            window.storage.set("custom-presets", JSON.stringify(normalized)).catch(() => {});
+          }
+        }
+      } catch (err) {}
+      try {
+        const usageResult = await window.storage.get("usage-counts");
+        if (usageResult && usageResult.value) {
+          setUsageCounts(JSON.parse(usageResult.value));
+        }
+      } catch (err) {}
+      try {
+        const mealsResult = await window.storage.get("saved-meals");
+        if (mealsResult && mealsResult.value) {
+          setSavedMeals(JSON.parse(mealsResult.value));
+        }
+      } catch (err) {}
+      try {
+        const hiddenResult = await window.storage.get("hidden-presets");
+        if (hiddenResult && hiddenResult.value) {
+          setHiddenPresets(JSON.parse(hiddenResult.value));
+        }
+      } catch (err) {}
+      try {
+        const commitResult = await window.storage.get("weekly-commitment");
+        if (commitResult && commitResult.value) {
+          const parsed = JSON.parse(commitResult.value);
+          setWeeklyCommitment(parsed.text || "");
+          setCommitmentWeekStart(parsed.weekStart || "");
+        }
+      } catch (err) {}
+      try {
+        const goalSettingsResult = await window.storage.get("goal-settings");
+        if (goalSettingsResult && goalSettingsResult.value) {
+          const parsed = JSON.parse(goalSettingsResult.value);
+          setGoalSettings((prev) => ({ ...prev, ...parsed }));
+        }
+      } catch (err) {}
+      try {
+        const scansResult = await window.storage.get("inbody-scans");
+        if (scansResult && scansResult.value) {
+          setInbodyScans(JSON.parse(scansResult.value));
+        } else {
+          const seed = [
+            { id: "seed-2022-12-29", date: "2022-12-29", weight: 235.1, bodyFat: 27.4, skeletalMuscle: 97.9, bodyFatMass: 64.5, bmr: 2450 },
+            { id: "seed-2023-01-16", date: "2023-01-16", weight: 235.8, bodyFat: 27.1, skeletalMuscle: 98.5, bodyFatMass: 63.8, bmr: 2466 },
+            { id: "seed-2025-12-01", date: "2025-12-01", weight: 245.8, bodyFat: 23.7, skeletalMuscle: 108, bodyFatMass: 58.2, bmr: 2650 },
+          ];
+          setInbodyScans(seed);
+        }
+      } catch (err) {
+        const seed = [
+          { id: "seed-2022-12-29", date: "2022-12-29", weight: 235.1, bodyFat: 27.4, skeletalMuscle: 97.9, bodyFatMass: 64.5, bmr: 2450 },
+          { id: "seed-2023-01-16", date: "2023-01-16", weight: 235.8, bodyFat: 27.1, skeletalMuscle: 98.5, bodyFatMass: 63.8, bmr: 2466 },
+          { id: "seed-2025-12-01", date: "2025-12-01", weight: 245.8, bodyFat: 23.7, skeletalMuscle: 108, bodyFatMass: 58.2, bmr: 2650 },
+        ];
+        setInbodyScans(seed);
+      }
+      setLoading(false);
+      hasLoadedRef.current = true;
+    }
+    loadAll();
+  }, []);
+
+  const hasLoadedRef = useRef(false);
+
+  const goalSaveGuardRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!goalSaveGuardRef.current) {
+      goalSaveGuardRef.current = true;
+      return;
+    }
+    const t = setTimeout(() => {
+      window.storage.set("goal-selection", String(goalIdx)).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [goalIdx, loading]);
+
+  const scansSaveGuardRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!scansSaveGuardRef.current) {
+      scansSaveGuardRef.current = true;
+      return;
+    }
+    const t = setTimeout(() => {
+      window.storage.set("inbody-scans", JSON.stringify(inbodyScans)).catch(() => {});
+    }, 500);
+    return () => clearTimeout(t);
+  }, [inbodyScans, loading]);
+
+  const usageSaveGuardRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!usageSaveGuardRef.current) {
+      usageSaveGuardRef.current = true;
+      return;
+    }
+    const t = setTimeout(() => {
+      window.storage.set("usage-counts", JSON.stringify(usageCounts)).catch(() => {});
+    }, 800);
+    return () => clearTimeout(t);
+  }, [usageCounts, loading]);
+
+  const [isLoadingDate, setIsLoadingDate] = useState(false);
+
+  const saveInFlightRef = useRef(false);
+  const pendingEntriesRef = useRef(null);
+
+  const saveEntries = async (newEntries) => {
+    if (saveInFlightRef.current) {
+      pendingEntriesRef.current = newEntries;
+      return;
+    }
+    saveInFlightRef.current = true;
+    try {
+      await window.storage.set(storageKey, JSON.stringify(newEntries));
+      setSaveStatus("Saved");
+      setTimeout(() => setSaveStatus(""), 1500);
+      setSavedEntryIds(new Set(newEntries.map((e) => e.id)));
+    } catch (err) {
+      const msg = err ? (err.message || err.toString() || "unknown") : "no err";
+      setSaveStatus(`Save failed: ${msg}`);
+      setTimeout(() => setSaveStatus(""), 15000);
+    } finally {
+      saveInFlightRef.current = false;
+      if (pendingEntriesRef.current !== null) {
+        const next = pendingEntriesRef.current;
+        pendingEntriesRef.current = null;
+        saveEntries(next);
+      }
+    }
+  };
+
+  const updateEntries = (newEntries) => {
+    setEntries(newEntries);
+    saveEntries(newEntries);
+  };
+
+  useEffect(() => {
+    if (activeTab !== "week" && activeTab !== "goal" && activeTab !== "why") return;
+    async function loadWeek() {
+      const days = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = formatLocalDate(d);
+        const key = `macros:${dateStr}`;
+        let dayEntries = [];
+        try {
+          const result = await window.storage.get(key);
+          if (result && result.value) {
+            dayEntries = JSON.parse(result.value);
+          }
+        } catch (err) {}
+        const cal = dayEntries.reduce((s, e) => s + e.cal, 0);
+        const protein = dayEntries.reduce((s, e) => s + e.protein, 0);
+        days.push({
+          date: dateStr,
+          dayName: d.toLocaleDateString("en-US", { weekday: "short" }),
+          dayNum: d.getDate(),
+          cal,
+          protein,
+          hasData: dayEntries.length > 0,
+          isToday: i === 0,
+        });
+      }
+      setWeeklyData(days);
+    }
+    loadWeek();
+  }, [activeTab]);
+
+  const totalCal = entries.reduce((sum, e) => sum + e.cal, 0);
+  const totalProtein = entries.reduce((sum, e) => sum + e.protein, 0);
+  const totalCarbs = entries.reduce((sum, e) => sum + (e.carbs || 0), 0);
+  const totalFat = entries.reduce((sum, e) => sum + (e.fat || 0), 0);
+  const calRemaining = activeGoal.cal - totalCal;
+  const proteinRemaining = activeGoal.protein - totalProtein;
+  const carbsRemaining = activeGoal.carbs - totalCarbs;
+  const fatRemaining = activeGoal.fat - totalFat;
+
+  const calPct = Math.min((totalCal / activeGoal.cal) * 100, 100);
+  const proteinPct = Math.min((totalProtein / activeGoal.protein) * 100, 100);
+  const carbsPct = Math.min((totalCarbs / activeGoal.carbs) * 100, 100);
+  const fatPct = Math.min((totalFat / activeGoal.fat) * 100, 100);
+
+  const calOver = totalCal > activeGoal.cal;
+  const proteinHit = totalProtein >= activeGoal.protein;
+  const carbsOver = totalCarbs > activeGoal.carbs;
+  const fatOver = totalFat > activeGoal.fat;
+
+  const getCoachTake = () => {
+    if (selectedDate !== today) return null;
+    const now = new Date();
+    const hour = now.getHours();
+    const calRemaining = activeGoal.cal - totalCal;
+    const proteinRemaining = activeGoal.protein - totalProtein;
+
+    let window = "morning";
+    let mealsLeft = 3;
+    if (hour >= 5 && hour < 11) { window = "morning"; mealsLeft = 3; }
+    else if (hour >= 11 && hour < 14) { window = "midday"; mealsLeft = 2; }
+    else if (hour >= 14 && hour < 17) { window = "afternoon"; mealsLeft = 2; }
+    else if (hour >= 17 && hour < 21) { window = "evening"; mealsLeft = 1; }
+    else { window = "late"; mealsLeft = 0; }
+
+    if (entries.length === 0) {
+      if (window === "morning") return { tone: "neutral", msg: `Start with breakfast — 4 eggs (400 cal, 24P) or a shake to kick off protein. ${activeGoal.protein}g target for the day.` };
+      if (window === "midday") return { tone: "warn", msg: `No food logged yet and it's past lunch. Eat a full meal now — 10oz chicken, ½ cup rice, ½ avocado. Behind on protein.` };
+      if (window === "afternoon") return { tone: "warn", msg: `Half the day gone, nothing logged. Log what you ate or eat now. ${activeGoal.protein}g protein is the floor.` };
+      if (window === "evening") return { tone: "off", msg: `Nothing logged and it's dinner time. Either log retroactively or front-load protein now — shake + 10oz chicken minimum.` };
+      return { tone: "off", msg: `Late with nothing logged. If you ate today, go back and log it. If you didn't, drink a shake now and own tomorrow.` };
+    }
+
+    if (proteinHit) {
+      if (calRemaining < 0) return { tone: "warn", msg: `Protein locked in (${Math.round(totalProtein)}g ✓) but you're ${Math.abs(Math.round(calRemaining))} cal over. Stop eating. Water, tea, done.` };
+      if (calRemaining < 200) return { tone: "good", msg: `Protein hit, ${calRemaining} cal left. Light snack only if hungry — berries, Greek yogurt, nothing heavy.` };
+      return { tone: "good", msg: `Protein crushed (${Math.round(totalProtein)}g). ${calRemaining} cal in the bank. Use them on whatever you want within reason.` };
+    }
+
+    const proteinPerMealNeeded = mealsLeft > 0 ? Math.ceil(proteinRemaining / mealsLeft) : proteinRemaining;
+
+    if (window === "morning") return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein to go. Aim ~${proteinPerMealNeeded}g per remaining meal. Breakfast first — hit 24-30g now.` };
+    if (window === "midday") {
+      if (proteinRemaining > 140) return { tone: "warn", msg: `${Math.round(proteinRemaining)}g protein still needed and only 2 meals left. Lunch needs 10-12oz chicken minimum. No skipping dinner.` };
+      return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein to go across 2 meals. ~${proteinPerMealNeeded}g each. Lunch now: 10oz chicken + rice + avocado hits it.` };
+    }
+    if (window === "afternoon") return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein remaining. Add a shake now (30g) + hit dinner hard (6-8oz protein minimum).` };
+    if (window === "evening") {
+      if (proteinRemaining > 60) return { tone: "warn", msg: `${Math.round(proteinRemaining)}g protein in one dinner is tough. Need 8-10oz protein + shake. Push it.` };
+      if (proteinRemaining > 30) return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein left. Dinner with 6oz protein + shake closes it out.` };
+      return { tone: "neutral", msg: `${Math.round(proteinRemaining)}g protein to hit target. Shake or small chicken portion and you're done.` };
+    }
+    if (proteinRemaining > 30) return { tone: "warn", msg: `${Math.round(proteinRemaining)}g short with the day almost done. Shake now. Tomorrow start strong.` };
+    return { tone: "neutral", msg: `Close but ${Math.round(proteinRemaining)}g short. One shake closes it.` };
+  };
+
+  const coachTake = getCoachTake();
+
+  const openPortionModal = (meal) => {
+    setPortionModal(meal);
+    setPortionQty(meal.defaultQty);
+  };
+
+  const confirmPortion = () => {
+    if (!portionModal) return;
+    const qty = parseFloat(portionQty) || 0;
+    if (qty <= 0) return;
+    const displayQty = qty % 1 === 0 ? qty : qty;
+    const newEntries = [
+      ...entries,
+      {
+        name: `${displayQty} ${portionModal.unitLabel} ${portionModal.name.toLowerCase()}`,
+        amount: qty,
+        unit: portionModal.unitLabel,
+        cal: Math.round(portionModal.cal * qty),
+        protein: Math.round(portionModal.protein * qty * 10) / 10,
+        carbs: Math.round((portionModal.carbs || 0) * qty * 10) / 10,
+        fat: Math.round((portionModal.fat || 0) * qty * 10) / 10,
+        goal: activeGoal.name,
+        id: Date.now(),
+      },
+    ];
+    updateEntries(newEntries);
+    const key = portionModal.name;
+    setUsageCounts({ ...usageCounts, [key]: (usageCounts[key] || 0) + 1 });
+    setPortionModal(null);
+  };
+
+  const addPreset = (meal) => {
+    updateEntries([...entries, { ...meal, id: Date.now() }]);
+  };
+
+  const startMealBuilder = () => {
+    setMealBuilder({ name: "", ingredients: [], notes: "" });
+  };
+
+  const addIngredientToBuilder = (meal, qty) => {
+    if (!mealBuilder) return;
+    setMealBuilder({
+      ...mealBuilder,
+      ingredients: [...mealBuilder.ingredients, { meal, qty, id: Date.now() }],
+    });
+  };
+
+  const removeIngredientFromBuilder = (id) => {
+    if (!mealBuilder) return;
+    setMealBuilder({
+      ...mealBuilder,
+      ingredients: mealBuilder.ingredients.filter((i) => i.id !== id),
+    });
+  };
+
+  const saveMeal = () => {
+    if (!mealBuilder || !mealBuilder.name || mealBuilder.ingredients.length === 0) return;
+    const totalCal = mealBuilder.ingredients.reduce((s, i) => s + i.meal.cal * i.qty, 0);
+    const totalProtein = mealBuilder.ingredients.reduce((s, i) => s + i.meal.protein * i.qty, 0);
+    const totalCarbs = mealBuilder.ingredients.reduce((s, i) => s + (i.meal.carbs || 0) * i.qty, 0);
+    const totalFat = mealBuilder.ingredients.reduce((s, i) => s + (i.meal.fat || 0) * i.qty, 0);
+
+    const newMeal = {
+      name: mealBuilder.name,
+      notes: (mealBuilder.notes || "").slice(0, NOTES_MAX),
+      ingredients: mealBuilder.ingredients.map(i => ({
+        name: i.meal.name,
+        unitLabel: i.meal.unitLabel,
+        qty: String(i.qty),
+        // Preserve inline macros for custom ingredients
+        ...(i.meal._isCustomIng ? { _cal: i.meal.cal, _protein: i.meal.protein, _carbs: i.meal.carbs || 0, _fat: i.meal.fat || 0 } : {}),
+      })),
+      cal: Math.round(totalCal),
+      protein: Math.round(totalProtein * 10) / 10,
+      carbs: Math.round(totalCarbs * 10) / 10,
+      fat: Math.round(totalFat * 10) / 10,
+      id: `meal-${Date.now()}`,
+    };
+    const updated = [...savedMeals, newMeal];
+    setSavedMeals(updated);
+    window.storage.set("saved-meals", JSON.stringify(updated)).catch(() => {});
+    setMealBuilder(null);
+    setBuilderShowCustomForm(false);
+    setBuilderCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz", saveToQuickAdd: false, category: "auto" });
+  };
+
+  const deleteMeal = (id) => {
+    const updated = savedMeals.filter((m) => m.id !== id);
+    setSavedMeals(updated);
+    window.storage.set("saved-meals", JSON.stringify(updated)).catch(() => {});
+  };
+
+  const openEditMealModal = (meal) => {
+    setEditMealShowPicker(false);
+    setEditMealCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz" });
+    setEditMealCustomIngSaveToQuickAdd(false);
+    // Deep-clone so edits don't mutate live state
+    setEditMealModal({
+      ...meal,
+      cal: String(meal.cal),
+      protein: String(meal.protein),
+      carbs: String(meal.carbs),
+      fat: String(meal.fat),
+      notes: meal.notes || "",
+      // Clone ingredients with string qty for inputs
+      ingredients: (meal.ingredients || []).map(i => ({ ...i, qty: String(i.qty) })),
+    });
+  };
+
+  const updateMeal = () => {
+    if (!editMealModal) return;
+    // If it has ingredients, recalculate macros from them (unless it's a one-shot custom meal)
+    let updatedMeal;
+    if (editMealModal.ingredients && editMealModal.ingredients.length > 0 && !editMealModal.isOneShot) {
+      // Find base preset macro data for each ingredient to recalculate
+      const allPossibleIngredients = [...PRESET_MEALS, ...customPresets];
+      let recalcCal = 0, recalcProtein = 0, recalcCarbs = 0, recalcFat = 0;
+      const updatedIngredients = editMealModal.ingredients.map(ing => {
+        const qty = parseFloat(ing.qty) || 0;
+        if (ing._cal !== undefined) {
+          // Custom inline ingredient — use embedded per-unit macros
+          recalcCal += ing._cal * qty;
+          recalcProtein += ing._protein * qty;
+          recalcCarbs += (ing._carbs || 0) * qty;
+          recalcFat += (ing._fat || 0) * qty;
+        } else {
+          const source = allPossibleIngredients.find(p => p.name === ing.name);
+          if (source) {
+            recalcCal += source.cal * qty;
+            recalcProtein += source.protein * qty;
+            recalcCarbs += (source.carbs || 0) * qty;
+            recalcFat += (source.fat || 0) * qty;
+          }
+        }
+        return { ...ing, qty };
+      });
+      updatedMeal = {
+        ...editMealModal,
+        ingredients: updatedIngredients,
+        cal: Math.round(recalcCal),
+        protein: Math.round(recalcProtein * 10) / 10,
+        carbs: Math.round(recalcCarbs * 10) / 10,
+        fat: Math.round(recalcFat * 10) / 10,
+        notes: editMealModal.notes.slice(0, NOTES_MAX),
+      };
+    } else {
+      // One-shot or manual — use the typed macro values directly
+      updatedMeal = {
+        ...editMealModal,
+        cal: Math.round(parseFloat(editMealModal.cal) || 0),
+        protein: Math.round((parseFloat(editMealModal.protein) || 0) * 10) / 10,
+        carbs: Math.round((parseFloat(editMealModal.carbs) || 0) * 10) / 10,
+        fat: Math.round((parseFloat(editMealModal.fat) || 0) * 10) / 10,
+        notes: editMealModal.notes.slice(0, NOTES_MAX),
+      };
+    }
+    const updated = savedMeals.map(m => m.id === updatedMeal.id ? updatedMeal : m);
+    setSavedMeals(updated);
+    window.storage.set("saved-meals", JSON.stringify(updated)).catch(() => {});
+    setEditMealModal(null);
+  };
+
+  const openMealScaleModal = (meal) => {
+    setMealScaleModal(meal);
+    setMealScale(1);
+  };
+
+  const confirmMealLog = () => {
+    if (!mealScaleModal) return;
+    const scale = parseFloat(mealScale) || 0;
+    if (scale <= 0) return;
+    updateEntries([
+      ...entries,
+      {
+        name: scale === 1 ? mealScaleModal.name : `${scale}× ${mealScaleModal.name}`,
+        amount: scale,
+        unit: scale === 1 ? "serving" : "×",
+        cal: Math.round(mealScaleModal.cal * scale),
+        protein: Math.round(mealScaleModal.protein * scale * 10) / 10,
+        carbs: Math.round(mealScaleModal.carbs * scale * 10) / 10,
+        fat: Math.round(mealScaleModal.fat * scale * 10) / 10,
+        notes: mealScaleModal.notes || "",
+        goal: activeGoal.name,
+        id: Date.now(),
+      },
+    ]);
+    const key = `meal:${mealScaleModal.name}`;
+    setUsageCounts({ ...usageCounts, [key]: (usageCounts[key] || 0) + 1 });
+    setMealScaleModal(null);
+  };
+
+  const addCustom = () => {
+    if (!customName || !customCal) return;
+    const qty = parseFloat(customQty) || 1;
+    const newEntry = {
+      name: customName,
+      amount: qty,
+      unit: customUnit || "serving",
+      cal: parseFloat(customCal) || 0,
+      protein: parseFloat(customProtein) || 0,
+      carbs: parseFloat(customCarbs) || 0,
+      fat: parseFloat(customFat) || 0,
+      notes: customNotes.slice(0, NOTES_MAX),
+      goal: activeGoal.name,
+      id: Date.now(),
+    };
+    updateEntries([...entries, newEntry]);
+
+    if (saveAsMeal) {
+      const cal = parseFloat(customCal) || 0;
+      const protein = parseFloat(customProtein) || 0;
+      const carbs = parseFloat(customCarbs) || 0;
+      const fat = parseFloat(customFat) || 0;
+      const newMeal = {
+        name: customName,
+        notes: customNotes.slice(0, NOTES_MAX),
+        ingredients: [],
+        cal: Math.round(cal),
+        protein: Math.round(protein * 10) / 10,
+        carbs: Math.round(carbs * 10) / 10,
+        fat: Math.round(fat * 10) / 10,
+        isOneShot: true,
+        id: `meal-${Date.now()}`,
+      };
+      const updatedMeals = [...savedMeals, newMeal];
+      setSavedMeals(updatedMeals);
+      window.storage.set("saved-meals", JSON.stringify(updatedMeals)).catch(() => {});
+    }
+
+    if (saveAsPreset) {
+      const cal = parseFloat(customCal) || 0;
+      const protein = parseFloat(customProtein) || 0;
+      const carbs = parseFloat(customCarbs) || 0;
+      const fat = parseFloat(customFat) || 0;
+
+      let category = customCategory;
+      if (customCategory === "auto") {
+        const proteinCal = protein * 4;
+        const carbsCal = carbs * 4;
+        const fatCal = fat * 9;
+        category = "Protein";
+        if (proteinCal >= carbsCal && proteinCal >= fatCal) category = "Protein";
+        else if (carbsCal >= proteinCal && carbsCal >= fatCal) category = "Carbs";
+        else if (fatCal > proteinCal && fatCal > carbsCal) category = "Fats";
+        if (protein === 0 && carbs === 0 && fat === 0 && cal > 0) category = "Alcohol";
+      }
+
+      const qty = parseFloat(customQty) || 1;
+      const unit = customUnit.trim() || "serving";
+      const unitLabel = unit.endsWith("s") || unit === "oz" ? unit : `${unit}s`;
+
+      const newPreset = {
+        name: customName,
+        category,
+        unit,
+        unitLabel,
+        cal: cal / qty,
+        protein: protein / qty,
+        carbs: carbs / qty,
+        fat: fat / qty,
+        defaultQty: qty,
+        isCustom: true,
+        id: `custom-${Date.now()}`,
+      };
+      const updatedPresets = [...customPresets, newPreset];
+      setCustomPresets(updatedPresets);
+      window.storage.set("custom-presets", JSON.stringify(updatedPresets)).catch(() => {});
+    }
+
+    setCustomName("");
+    setCustomCal("");
+    setCustomProtein("");
+    setCustomCarbs("");
+    setCustomFat("");
+    setCustomNotes("");
+    setCustomCategory("auto");
+    setCustomUnit("oz");
+    setCustomQty("");
+    setSaveAsPreset(false);
+    setSaveAsMeal(false);
+  };
+
+  const removeCustomPreset = (id) => {
+    const updated = customPresets.filter((p) => p.id !== id);
+    setCustomPresets(updated);
+    window.storage.set("custom-presets", JSON.stringify(updated)).catch(() => {});
+  };
+
+  // Shared helper — saves a custom ingredient to Quick Adds
+  const saveIngredientToQuickAdd = ({ name, cal, protein, carbs, fat, qty, unit, category: forcedCategory }) => {
+    const unitLabel = unit.endsWith("s") || unit === "oz" ? unit : `${unit}s`;
+    let category = forcedCategory || "auto";
+    if (category === "auto") {
+      const pCal = protein * 4, cCal = carbs * 4, fCal = fat * 9;
+      if (pCal >= cCal && pCal >= fCal) category = "Protein";
+      else if (cCal >= pCal && cCal >= fCal) category = "Carbs";
+      else if (fCal > pCal && fCal > cCal) category = "Fats";
+      else category = "Protein";
+      if (protein === 0 && carbs === 0 && fat === 0 && cal > 0) category = "Alcohol";
+    }
+    const newPreset = {
+      name,
+      category,
+      unit,
+      unitLabel,
+      cal: cal / qty,
+      protein: protein / qty,
+      carbs: carbs / qty,
+      fat: fat / qty,
+      defaultQty: qty,
+      isCustom: true,
+      id: `custom-${Date.now()}`,
+    };
+    const updated = [...customPresets, newPreset];
+    setCustomPresets(updated);
+    window.storage.set("custom-presets", JSON.stringify(updated)).catch(() => {});
+  };
+
+  const hidePreset = (name) => {
+    if (!hiddenPresets.includes(name)) {
+      const updated = [...hiddenPresets, name];
+      setHiddenPresets(updated);
+      window.storage.set("hidden-presets", JSON.stringify(updated)).catch(() => {});
+    }
+  };
+
+  const restoreAllPresets = () => {
+    setHiddenPresets([]);
+    window.storage.set("hidden-presets", JSON.stringify([])).catch(() => {});
+  };
+
+  const openScanModal = () => {
+    setScanModal({
+      date: formatLocalDate(new Date()),
+      weight: "",
+      bodyFat: "",
+      skeletalMuscle: "",
+      bodyFatMass: "",
+      bmr: "",
+    });
+  };
+
+  const saveScan = () => {
+    if (!scanModal || !scanModal.date || !scanModal.weight) return;
+    const newScan = {
+      id: `scan-${Date.now()}`,
+      date: scanModal.date,
+      weight: parseFloat(scanModal.weight) || 0,
+      bodyFat: parseFloat(scanModal.bodyFat) || 0,
+      skeletalMuscle: parseFloat(scanModal.skeletalMuscle) || 0,
+      bodyFatMass: parseFloat(scanModal.bodyFatMass) || 0,
+      bmr: parseFloat(scanModal.bmr) || 0,
+    };
+    const updated = [...inbodyScans, newScan].sort((a, b) => a.date.localeCompare(b.date));
+    setInbodyScans(updated);
+    setScanModal(null);
+  };
+
+  const deleteScan = (id) => {
+    if (!confirm("Delete this scan? This can't be undone.")) return;
+    setInbodyScans(inbodyScans.filter((s) => s.id !== id));
+    if (compareScanId === id) setCompareScanId(null);
+  };
+
+  const analyzeScans = (latest, baseline) => {
+    if (!latest || !baseline) return null;
+    const d1 = new Date(baseline.date + "T00:00:00");
+    const d2 = new Date(latest.date + "T00:00:00");
+    const days = Math.round((d2 - d1) / 86400000);
+    const weeks = days / 7;
+
+    const weightDelta = latest.weight - baseline.weight;
+    const bfDelta = latest.bodyFat - baseline.bodyFat;
+    const smmDelta = latest.skeletalMuscle - baseline.skeletalMuscle;
+    const bfmDelta = latest.bodyFatMass - baseline.bodyFatMass;
+    const bmrDelta = latest.bmr - baseline.bmr;
+    const weeklyWeightRate = weeks > 0 ? weightDelta / weeks : 0;
+
+    let fatLossRatio = null;
+    if (weightDelta < 0 && bfmDelta < 0) fatLossRatio = (bfmDelta / weightDelta) * 100;
+
+    const takes = [];
+    if (days < 1) {
+      takes.push("Same-day scan — no meaningful comparison.");
+    } else if (weightDelta < 0) {
+      if (smmDelta >= -0.5) {
+        takes.push(`Lost ${Math.abs(weightDelta).toFixed(1)} lbs over ${weeks.toFixed(1)} weeks (${weeklyWeightRate.toFixed(2)} lbs/week avg).`);
+        if (bfmDelta < 0) {
+          const fatPct = fatLossRatio ? fatLossRatio.toFixed(0) : "—";
+          takes.push(`${Math.abs(bfmDelta).toFixed(1)} lbs of that was fat (${fatPct}% of total loss). Muscle preserved — this is exactly what you want.`);
+        }
+      } else if (smmDelta < -1) {
+        takes.push(`⚠️ Lost ${Math.abs(smmDelta).toFixed(1)} lbs of muscle. Check protein intake and lifting intensity.`);
+      } else {
+        takes.push(`Lost ${Math.abs(weightDelta).toFixed(1)} lbs. Minor muscle loss (${Math.abs(smmDelta).toFixed(1)} lbs) — watch it.`);
+      }
+    } else if (weightDelta > 0) {
+      if (smmDelta > 0 && bfDelta <= 0) {
+        takes.push(`Recomposition: +${weightDelta.toFixed(1)} lbs weight, +${smmDelta.toFixed(1)} lbs muscle, body fat % dropped ${Math.abs(bfDelta).toFixed(1)}%. Got bigger AND leaner.`);
+      } else if (smmDelta > bfmDelta) {
+        takes.push(`Gained ${weightDelta.toFixed(1)} lbs — ${smmDelta.toFixed(1)} lbs muscle, ${bfmDelta.toFixed(1)} lbs fat. Lean gain.`);
+      } else {
+        takes.push(`Gained ${weightDelta.toFixed(1)} lbs — mostly fat (${bfmDelta.toFixed(1)} lbs fat, ${smmDelta.toFixed(1)} lbs muscle).`);
+      }
+    } else {
+      takes.push("Weight unchanged — check muscle and fat deltas for recomposition.");
+    }
+
+    if (bmrDelta > 0) takes.push(`BMR up ${bmrDelta.toFixed(0)} cal/day (muscle drives this).`);
+    else if (bmrDelta < -50) takes.push(`BMR down ${Math.abs(bmrDelta).toFixed(0)} cal/day — metabolism dropped with muscle.`);
+
+    return { days, weeks, weightDelta, bfDelta, smmDelta, bfmDelta, bmrDelta, weeklyWeightRate, fatLossRatio, takes };
+  };
+
+  const exportToCSV = async () => {
+    try {
+      // ── Section 1: Macro Entries ──
+      const macroRows = [["Section", "Date", "Meal", "Amount", "Unit", "Calories", "Protein (g)", "Carbs (g)", "Fat (g)", "Goal", "Notes"]];
+      let allDaysData = [];
+      try {
+        const listResult = await window.storage.list("macros:");
+        if (listResult && listResult.keys && listResult.keys.length > 0) {
+          const sortedKeys = [...listResult.keys].sort();
+          for (const key of sortedKeys) {
+            const date = key.replace("macros:", "");
+            try {
+              const result = await window.storage.get(key);
+              if (result && result.value) {
+                const dayEntries = JSON.parse(result.value);
+                for (const entry of dayEntries) allDaysData.push({ date, entry });
+              }
+            } catch (err) {}
+          }
+        }
+      } catch (err) {}
+      if (allDaysData.length === 0 && entries.length > 0) {
+        for (const entry of entries) allDaysData.push({ date: today, entry });
+      }
+      for (const { date, entry } of allDaysData) {
+        macroRows.push(["Macros", date, entry.name || "", entry.amount || "", entry.unit || "", Math.round(entry.cal || 0), entry.protein || 0, entry.carbs || 0, entry.fat || 0, entry.goal || "", entry.notes || ""]);
+      }
+
+      // ── Section 2: Weight Logs ──
+      const weightRows = [["", ""], ["Section", "Date", "Weight (lbs)"]];
+      const sortedLogs = [...weightLogs].sort((a, b) => a.date.localeCompare(b.date));
+      for (const l of sortedLogs) {
+        weightRows.push(["Weight Log", l.date, l.weight]);
+      }
+
+      // ── Section 3: InBody Scans ──
+      const scanRows = [["", ""], ["Section", "Date", "Weight (lbs)", "Body Fat (%)", "Skeletal Muscle (lbs)", "Body Fat Mass (lbs)", "BMR (cal)"]];
+      const sortedScans = [...inbodyScans].sort((a, b) => a.date.localeCompare(b.date));
+      for (const s of sortedScans) {
+        scanRows.push(["InBody Scan", s.date, s.weight, s.bodyFat, s.skeletalMuscle, s.bodyFatMass, s.bmr]);
+      }
+
+      const toCSVRow = (row) => row.map((cell) => { const str = String(cell); return (str.includes(",") || str.includes('"') || str.includes("\n")) ? `"${str.replace(/"/g, '""')}"` : str; }).join(",");
+      const allRows = [...macroRows, ...weightRows, ...scanRows];
+      const csv = allRows.map(toCSVRow).join("\n");
+
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `macro-tracker-${today}.csv`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch (err) {
+      alert("Export failed: " + (err.message || "unknown error"));
+    }
+  };
+
+  // ── Full JSON Backup ──
+  const exportBackupJSON = async () => {
+    try {
+      const backup = { version: 1, exportedAt: new Date().toISOString(), data: {} };
+
+      // Grab all keys from storage
+      const allKeys = [];
+      try {
+        const macroKeys = await window.storage.list("macros:");
+        if (macroKeys && macroKeys.keys) allKeys.push(...macroKeys.keys);
+      } catch (e) {}
+
+      const singleKeys = [
+        "goal-selection", "custom-presets", "usage-counts", "saved-meals",
+        "hidden-presets", "weekly-commitment", "goal-settings", "inbody-scans", "weight-logs"
+      ];
+      allKeys.push(...singleKeys);
+
+      for (const key of allKeys) {
+        try {
+          const result = await window.storage.get(key);
+          if (result && result.value) backup.data[key] = result.value;
+        } catch (e) {}
+      }
+
+      const json = JSON.stringify(backup, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `macro-tracker-backup-${today}.json`;
+      link.style.display = "none";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    } catch (err) {
+      alert("Backup failed: " + (err.message || "unknown error"));
+    }
+  };
+
+  const backupImportRef = useRef(null);
+  const [backupStatus, setBackupStatus] = useState(null); // null | "success" | "error"
+
+  const importBackupJSON = async (file) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const backup = JSON.parse(text);
+      if (!backup.data || typeof backup.data !== "object") throw new Error("Invalid backup file");
+
+      let restored = 0;
+      for (const [key, value] of Object.entries(backup.data)) {
+        try {
+          await window.storage.set(key, value);
+          restored++;
+        } catch (e) {}
+      }
+
+      // Reload all state from storage
+      try { const r = await window.storage.get("goal-selection"); if (r && r.value) { const v = parseInt(r.value, 10); if (!isNaN(v) && v >= 0 && v < GOAL_PRESETS.length) setGoalIdx(v); } } catch (e) {}
+      try { const r = await window.storage.get("custom-presets"); if (r && r.value) setCustomPresets(JSON.parse(r.value)); } catch (e) {}
+      try { const r = await window.storage.get("usage-counts"); if (r && r.value) setUsageCounts(JSON.parse(r.value)); } catch (e) {}
+      try { const r = await window.storage.get("saved-meals"); if (r && r.value) setSavedMeals(JSON.parse(r.value)); } catch (e) {}
+      try { const r = await window.storage.get("hidden-presets"); if (r && r.value) setHiddenPresets(JSON.parse(r.value)); } catch (e) {}
+      try { const r = await window.storage.get("inbody-scans"); if (r && r.value) setInbodyScans(JSON.parse(r.value)); } catch (e) {}
+      try { const r = await window.storage.get("weight-logs"); if (r && r.value) setWeightLogs(JSON.parse(r.value)); } catch (e) {}
+      try { const r = await window.storage.get("goal-settings"); if (r && r.value) setGoalSettings(prev => ({ ...prev, ...JSON.parse(r.value) })); } catch (e) {}
+      try {
+        const r = await window.storage.get(`macros:${selectedDate}`);
+        if (r && r.value) { const loaded = JSON.parse(r.value); setEntries(loaded); setSavedEntryIds(new Set(loaded.map(e => e.id))); }
+        else { setEntries([]); setSavedEntryIds(new Set()); }
+      } catch (e) {}
+
+      setBackupStatus("success");
+      setTimeout(() => setBackupStatus(null), 5000);
+    } catch (err) {
+      setBackupStatus("error");
+      setTimeout(() => setBackupStatus(null), 5000);
+    }
+    if (backupImportRef.current) backupImportRef.current.value = "";
+  };
+
+  const removeEntry = (id) => {
+    updateEntries(entries.filter((e) => e.id !== id));
+  };
+
+  const importFileRef = useRef(null);
+  const [importStatus, setImportStatus] = useState(null); // null | { count, days } | "error"
+
+  const importFromCSV = async (file) => {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) { setImportStatus("error"); return; }
+
+      // Parse header to find column indices (case-insensitive, trimmed)
+      const header = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
+      const col = (name) => header.indexOf(name);
+      const iDate = col("date");
+      const iMeal = col("meal");
+      const iAmount = col("amount");
+      const iUnit = col("unit");
+      const iCal = col("calories");
+      const iProtein = col("protein (g)");
+      const iCarbs = col("carbs (g)");
+      const iFat = col("fat (g)");
+      const iNotes = col("notes");
+      // goal column is intentionally ignored
+
+      if (iDate === -1 || iMeal === -1 || iCal === -1) {
+        setImportStatus("error");
+        return;
+      }
+
+      // Group rows by date
+      const byDate = {};
+      for (let i = 1; i < lines.length; i++) {
+        const cells = parseCSVLine(lines[i]);
+        const date = (cells[iDate] || "").trim();
+        if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+        if (!byDate[date]) byDate[date] = [];
+        byDate[date].push({
+          name: cells[iMeal] || "",
+          amount: iAmount !== -1 ? (parseFloat(cells[iAmount]) || undefined) : undefined,
+          unit: iUnit !== -1 ? (cells[iUnit] || "") : "",
+          cal: parseFloat(cells[iCal]) || 0,
+          protein: parseFloat(iProtein !== -1 ? cells[iProtein] : 0) || 0,
+          carbs: parseFloat(iCarbs !== -1 ? cells[iCarbs] : 0) || 0,
+          fat: parseFloat(iFat !== -1 ? cells[iFat] : 0) || 0,
+          notes: iNotes !== -1 ? (cells[iNotes] || "") : "",
+          id: Date.now() + Math.random(),
+        });
+      }
+
+      const dates = Object.keys(byDate);
+      if (dates.length === 0) { setImportStatus("error"); return; }
+
+      // Write each day — only if that day has no existing data (don't overwrite)
+      let imported = 0;
+      let skipped = 0;
+      for (const date of dates) {
+        const key = `macros:${date}`;
+        let existing = [];
+        try {
+          const r = await window.storage.get(key);
+          if (r && r.value) existing = JSON.parse(r.value);
+        } catch (e) {}
+        if (existing.length > 0) {
+          skipped++;
+          continue; // Don't overwrite days that already have data
+        }
+        await window.storage.set(key, JSON.stringify(byDate[date]));
+        imported++;
+      }
+
+      setImportStatus({ imported, skipped, total: dates.length });
+      setTimeout(() => setImportStatus(null), 6000);
+
+      // Reload today's entries if today was among imported
+      if (byDate[selectedDate]) {
+        setEntries(byDate[selectedDate]);
+        setSavedEntryIds(new Set(byDate[selectedDate].map(e => e.id)));
+      }
+    } catch (err) {
+      setImportStatus("error");
+      setTimeout(() => setImportStatus(null), 5000);
+    }
+    // Reset file input so same file can be re-selected
+    if (importFileRef.current) importFileRef.current.value = "";
+  };
+
+  // Minimal CSV line parser — handles quoted fields with commas and escaped quotes
+  const parseCSVLine = (line) => {
+    const result = [];
+    let cur = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"' && line[i + 1] === '"') { cur += '"'; i++; }
+        else if (ch === '"') { inQuotes = false; }
+        else { cur += ch; }
+      } else {
+        if (ch === '"') { inQuotes = true; }
+        else if (ch === ",") { result.push(cur); cur = ""; }
+        else { cur += ch; }
+      }
+    }
+    result.push(cur);
+    return result;
+  };
+
+  const saveCommitment = (text) => {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(d.setDate(diff));
+    const weekStart = formatLocalDate(monday);
+    setWeeklyCommitment(text);
+    setCommitmentWeekStart(weekStart);
+    window.storage.set("weekly-commitment", JSON.stringify({ text, weekStart })).catch(() => {});
+  };
+
+  const resetDay = () => { updateEntries([]); };
+
+  const saveGoalSettings = (newSettings) => {
+    setGoalSettings(newSettings);
+    window.storage.set("goal-settings", JSON.stringify(newSettings)).catch(() => {});
+    setShowGoalEditModal(false);
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
+        <p className="text-stone-500">Loading today's log...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-stone-50 p-4 pb-24">
+      {showMantra && (
+        <div className="fixed inset-0 bg-stone-900 flex items-center justify-center z-[100] p-8 cursor-pointer" onClick={() => setShowMantra(false)}>
+          <div className="max-w-lg text-center">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500 mb-8">Before you log anything</p>
+            <p className="text-2xl sm:text-3xl text-white leading-relaxed font-light mb-10">
+              I look in the mirror and I'm proud of who I am and how I look.
+              <br /><br />
+              I am a magnetic man — in body, mind, and presence.
+              <br /><br />
+              Every meal is a choice, and I make the choice that builds the man I'm becoming.
+              <br /><br />
+              <span className="font-semibold">I don't negotiate with my goals. I honor them.</span>
+            </p>
+            <p className="text-xs text-stone-500 uppercase tracking-wider">Tap anywhere to continue</p>
+          </div>
+        </div>
+      )}
+
+      <div className="max-w-md mx-auto">
+        {/* Header */}
+        <div className="mb-4">
+          <div className="flex items-center justify-between mb-1">
+            <h1 className="text-2xl font-bold text-stone-900">Macro Tracker</h1>
+            <div className="flex items-center gap-2">
+              {saveStatus && !saveStatus.startsWith("Save failed") && (
+                <span className="text-xs text-stone-500 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> {saveStatus}
+                </span>
+              )}
+              <input ref={importFileRef} type="file" accept=".csv" className="hidden" onChange={(e) => importFromCSV(e.target.files[0])} />
+              <input ref={backupImportRef} type="file" accept=".json" className="hidden" onChange={(e) => importBackupJSON(e.target.files[0])} />
+              <button onClick={() => importFileRef.current && importFileRef.current.click()} className="flex items-center gap-1 px-2.5 py-1.5 bg-white rounded-lg border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50 active:bg-stone-100 shadow-sm" title="Import logs from CSV">
+                <ChevronRight className="w-3.5 h-3.5 rotate-90" /> Import
+              </button>
+              <button onClick={exportToCSV} className="flex items-center gap-1 px-2.5 py-1.5 bg-white rounded-lg border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50 active:bg-stone-100 shadow-sm" title="Export macros + weight + scans to CSV">
+                <Download className="w-3.5 h-3.5" /> CSV
+              </button>
+              <button onClick={exportBackupJSON} className="flex items-center gap-1 px-2.5 py-1.5 bg-stone-900 text-white rounded-lg border border-stone-800 text-xs font-medium hover:bg-stone-800 active:bg-stone-700 shadow-sm" title="Full backup — all data as JSON">
+                <Download className="w-3.5 h-3.5" /> Backup
+              </button>
+              <button onClick={() => backupImportRef.current && backupImportRef.current.click()} className="flex items-center gap-1 px-2.5 py-1.5 bg-white rounded-lg border border-stone-200 text-xs font-medium text-stone-700 hover:bg-stone-50 active:bg-stone-100 shadow-sm" title="Restore from JSON backup">
+                <ChevronRight className="w-3.5 h-3.5 rotate-90" /> Restore
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => shiftDate(-1)} className="p-1.5 bg-white border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50 active:bg-stone-100">
+              <ChevronLeft className="w-4 h-4" />
+            </button>
+            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="text-sm text-stone-700 bg-white border border-stone-200 rounded-lg px-2 py-1 focus:outline-none focus:border-stone-400" />
+            <button onClick={() => shiftDate(1)} className="p-1.5 bg-white border border-stone-200 rounded-lg text-stone-600 hover:bg-stone-50 active:bg-stone-100">
+              <ChevronRight className="w-4 h-4" />
+            </button>
+            {selectedDate !== today && (
+              <button onClick={() => setSelectedDate(today)} className="text-xs text-stone-500 hover:text-stone-700 underline">Today</button>
+            )}
+          </div>
+          <p className="text-[11px] text-stone-400 mt-1">{new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" })}</p>
+        </div>
+
+        {saveStatus && saveStatus.startsWith("Save failed") && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-red-900 mb-1">⚠️ Logs not saving</p>
+            <p className="text-xs text-red-800 break-words">{saveStatus}</p>
+            <p className="text-[11px] text-red-700 mt-2">Check browser console (F12) for full details. Try refreshing the artifact.</p>
+          </div>
+        )}
+
+        {importStatus === "error" && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-red-900">Import failed</p>
+            <p className="text-xs text-red-700 mt-1">Make sure you're using a CSV exported from this tracker. Required columns: Date, Meal, Calories.</p>
+          </div>
+        )}
+        {importStatus && importStatus !== "error" && (
+          <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-emerald-900">Import complete</p>
+            <p className="text-xs text-emerald-700 mt-1">
+              {importStatus.imported} day{importStatus.imported !== 1 ? "s" : ""} restored.
+              {importStatus.skipped > 0 && ` ${importStatus.skipped} day${importStatus.skipped !== 1 ? "s" : ""} skipped (already had data).`}
+            </p>
+          </div>
+        )}
+        {backupStatus === "success" && (
+          <div className="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-emerald-900">Backup restored ✓</p>
+            <p className="text-xs text-emerald-700 mt-1">All your data has been restored — meals, weight logs, InBody scans, presets, and settings.</p>
+          </div>
+        )}
+        {backupStatus === "error" && (
+          <div className="mb-4 bg-red-50 border border-red-200 rounded-xl p-3">
+            <p className="text-xs font-semibold text-red-900">Restore failed</p>
+            <p className="text-xs text-red-700 mt-1">Make sure you're using a .json backup file exported from this app.</p>
+          </div>
+        )}
+
+        {/* Tab Navigation */}
+        <div className="flex gap-1 mb-6 bg-white rounded-xl p-1 shadow-sm border border-stone-200">
+          {[
+            { id: "why", icon: Heart, label: "Why" },
+            { id: "today", icon: Calendar, label: selectedDate === today ? "Today" : new Date(selectedDate + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) },
+            { id: "week", icon: TrendingUp, label: "Week" },
+            { id: "body", icon: Scale, label: "Body" },
+            { id: "goal", icon: Target, label: "Goal" },
+          ].map(({ id, icon: Icon, label }) => (
+            <button key={id} onClick={() => setActiveTab(id)}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-xs font-medium transition-colors ${activeTab === id ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-50"}`}>
+              <Icon className="w-3.5 h-3.5" /> {label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "today" && (
+          <div>
+            {streakCount > 0 && (
+              <div className="bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 mb-4 text-white shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase tracking-wider opacity-90">Protein Streak</p>
+                    <p className="text-2xl font-bold">{streakCount} day{streakCount === 1 ? "" : "s"} 🔥</p>
+                  </div>
+                  <p className="text-xs opacity-90 text-right max-w-[40%]">Don't break the chain. One shake if you have to.</p>
+                </div>
+              </div>
+            )}
+
+            {/* Progress Cards */}
+            <div className="space-y-3 mb-6">
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+                <div className="flex justify-between items-baseline mb-2">
+                  <span className="text-sm font-medium text-stone-600">Calories</span>
+                  <span className={`text-xs font-medium ${calOver ? "text-red-600" : "text-stone-500"}`}>
+                    {calOver ? `${Math.abs(calRemaining)} over` : `${calRemaining} left`}
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1 mb-2">
+                  <span className={`text-2xl font-bold ${calOver ? "text-red-600" : "text-stone-900"}`}>{Math.round(totalCal)}</span>
+                  <span className="text-sm text-stone-400">/ {activeGoal.cal}</span>
+                </div>
+                <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${calOver ? "bg-red-500" : "bg-stone-900"}`} style={{ width: `${calPct}%` }} />
+                </div>
+              </div>
+
+              <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+                <div className="flex justify-between items-baseline mb-2">
+                  <span className="text-sm font-medium text-stone-600">Protein</span>
+                  <span className={`text-xs font-medium ${proteinHit ? "text-emerald-600" : "text-stone-500"}`}>
+                    {proteinHit ? "Target hit ✓" : `${Math.round(proteinRemaining)}g to go`}
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1 mb-2">
+                  <span className={`text-2xl font-bold ${proteinHit ? "text-emerald-600" : "text-stone-900"}`}>{Math.round(totalProtein)}g</span>
+                  <span className="text-sm text-stone-400">/ {activeGoal.protein}g</span>
+                </div>
+                <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
+                  <div className={`h-full rounded-full transition-all ${proteinHit ? "bg-emerald-500" : "bg-stone-900"}`} style={{ width: `${proteinPct}%` }} />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-white rounded-2xl p-3 shadow-sm border border-stone-200">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-xs font-medium text-stone-600">Carbs</span>
+                    <span className={`text-[10px] font-medium ${carbsOver ? "text-red-600" : "text-stone-400"}`}>
+                      {carbsOver ? `${Math.round(Math.abs(carbsRemaining))}g over` : `${Math.round(carbsRemaining)}g left`}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-1 mb-1">
+                    <span className={`text-lg font-bold ${carbsOver ? "text-red-600" : "text-stone-900"}`}>{Math.round(totalCarbs)}g</span>
+                    <span className="text-xs text-stone-400">/ {activeGoal.carbs}g</span>
+                  </div>
+                  <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${carbsOver ? "bg-red-500" : "bg-amber-500"}`} style={{ width: `${carbsPct}%` }} />
+                  </div>
+                </div>
+                <div className="bg-white rounded-2xl p-3 shadow-sm border border-stone-200">
+                  <div className="flex justify-between items-baseline mb-1">
+                    <span className="text-xs font-medium text-stone-600">Fat</span>
+                    <span className={`text-[10px] font-medium ${fatOver ? "text-red-600" : "text-stone-400"}`}>
+                      {fatOver ? `${Math.round(Math.abs(fatRemaining))}g over` : `${Math.round(fatRemaining)}g left`}
+                    </span>
+                  </div>
+                  <div className="flex items-baseline gap-1 mb-1">
+                    <span className={`text-lg font-bold ${fatOver ? "text-red-600" : "text-stone-900"}`}>{Math.round(totalFat)}g</span>
+                    <span className="text-xs text-stone-400">/ {activeGoal.fat}g</span>
+                  </div>
+                  <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${fatOver ? "bg-red-500" : "bg-sky-500"}`} style={{ width: `${fatPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Coach's Take */}
+            {coachTake && (
+              <div className={`rounded-2xl p-4 mb-6 border-2 ${
+                coachTake.tone === "good" ? "bg-emerald-50 border-emerald-200" :
+                coachTake.tone === "warn" ? "bg-amber-50 border-amber-200" :
+                coachTake.tone === "off" ? "bg-red-50 border-red-200" :
+                "bg-stone-900 border-stone-900 text-white"
+              }`}>
+                <p className={`text-[10px] font-semibold uppercase tracking-wider mb-1.5 ${
+                  coachTake.tone === "good" ? "text-emerald-700" :
+                  coachTake.tone === "warn" ? "text-amber-700" :
+                  coachTake.tone === "off" ? "text-red-700" :
+                  "text-stone-400"
+                }`}>Coach's Take</p>
+                <p className={`text-sm leading-relaxed ${coachTake.tone === "neutral" ? "text-white" : "text-stone-900"}`}>
+                  {coachTake.msg}
+                </p>
+              </div>
+            )}
+
+            {/* Today's Log */}
+            {entries.length > 0 && (
+              <div className="mb-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide">Today's Log</h2>
+                  <button onClick={resetDay} className="text-xs text-stone-400 hover:text-stone-600 flex items-center gap-1">
+                    <RotateCcw className="w-3 h-3" /> Clear
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {entries.map((entry) => {
+                    const isSaved = savedEntryIds.has(entry.id);
+                    return (
+                      <div key={entry.id} className="bg-white rounded-xl p-3 shadow-sm border border-stone-200 flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium text-stone-900">{entry.name}</p>
+                            {isSaved ? (
+                              <span className="text-[10px] text-emerald-600 flex items-center gap-0.5 flex-shrink-0">
+                                <Check className="w-3 h-3" /> Saved
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-amber-600 flex-shrink-0">Unsaved</span>
+                            )}
+                          </div>
+                          <p className="text-xs text-stone-500 mt-0.5">
+                            {Math.round(entry.cal)} cal · {entry.protein}P · {entry.carbs || 0}C · {entry.fat || 0}F
+                          </p>
+                          {/* ✅ Full notes — no truncation */}
+                          {entry.notes && (
+                            <p className="text-xs text-stone-400 italic mt-1 leading-relaxed">
+                              {entry.notes}
+                            </p>
+                          )}
+                        </div>
+                        <button onClick={() => removeEntry(entry.id)} className="ml-3 p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50 flex-shrink-0">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Saved Meals */}
+            <div className="mb-6">
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide">Saved Meals</h2>
+                <button onClick={startMealBuilder} className="text-xs font-medium text-stone-600 bg-white px-3 py-1.5 rounded-lg border border-stone-200 hover:bg-stone-50 flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Build Meal
+                </button>
+              </div>
+              {savedMeals.length === 0 ? (
+                <div className="bg-white rounded-xl p-4 border border-stone-200 border-dashed">
+                  <p className="text-xs text-stone-400 text-center">Combine ingredients into meals you eat often</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {[...savedMeals]
+                    .sort((a, b) => (usageCounts[`meal:${b.name}`] || 0) - (usageCounts[`meal:${a.name}`] || 0))
+                    .map((meal) => {
+                      const useCount = usageCounts[`meal:${meal.name}`] || 0;
+                      return (
+                        <div key={meal.id} className="w-full bg-white rounded-xl p-3 shadow-sm border border-stone-200 flex items-center justify-between">
+                          <button onClick={() => openMealScaleModal(meal)} className="flex-1 min-w-0 text-left hover:opacity-70">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-stone-900 truncate">{meal.name}</p>
+                              {useCount >= 3 && (
+                                <span className="text-[10px] bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-full flex-shrink-0">{useCount}×</span>
+                              )}
+                            </div>
+                            <p className="text-xs text-stone-500 mt-0.5">
+                              {meal.cal} cal · {meal.protein}P · {meal.carbs}C · {meal.fat}F
+                            </p>
+                            {/* ✅ Ingredients shown on card face, notes hidden until modal */}
+                            {meal.ingredients && meal.ingredients.length > 0 && (
+                              <p className="text-[10px] text-stone-400 mt-0.5 truncate">
+                                {meal.ingredients.map(i => `${i.qty} ${i.unitLabel} ${i.name.toLowerCase()}`).join(" + ")}
+                              </p>
+                            )}
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); openEditMealModal(meal); }} className="ml-1 p-2 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-50" title="Edit meal">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => deleteMeal(meal.id)} className="ml-1 p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Add Presets */}
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">Quick Add</h2>
+              {CATEGORY_ORDER.map((category) => {
+                const builtInMeals = PRESET_MEALS.filter((m) => m.category === category).filter((m) => !hiddenPresets.includes(m.name));
+                const customMeals = customPresets.filter((m) => m.category === category);
+                const allMeals = [...builtInMeals, ...customMeals].sort((a, b) => (usageCounts[b.name] || 0) - (usageCounts[a.name] || 0));
+                if (allMeals.length === 0) return null;
+                return (
+                  <div key={category} className="mb-4">
+                    <h3 className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider mb-2 px-1">{category}</h3>
+                    <div className="space-y-2">
+                      {allMeals.map((meal, idx) => {
+                        const defaultCal = Math.round(meal.cal * meal.defaultQty);
+                        const defaultProtein = Math.round(meal.protein * meal.defaultQty * 10) / 10;
+                        const defaultCarbs = Math.round((meal.carbs || 0) * meal.defaultQty * 10) / 10;
+                        const defaultFat = Math.round((meal.fat || 0) * meal.defaultQty * 10) / 10;
+                        const useCount = usageCounts[meal.name] || 0;
+                        const displayName = meal.isCustom ? meal.name : `${meal.defaultQty} ${meal.unitLabel} ${meal.name.toLowerCase()}`;
+                        return (
+                          <div key={meal.id || idx} className="w-full bg-white rounded-xl p-3 shadow-sm border border-stone-200 flex items-center justify-between">
+                            <button onClick={() => openPortionModal(meal)} className="flex-1 min-w-0 text-left hover:opacity-70">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-stone-900 truncate">{displayName}</p>
+                                {meal.isCustom && <span className="text-[9px] bg-stone-900 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">Custom</span>}
+                                {useCount >= 3 && <span className="text-[10px] bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-full flex-shrink-0">{useCount}×</span>}
+                              </div>
+                              <p className="text-xs text-stone-500">{defaultCal} cal · {defaultProtein}P · {defaultCarbs}C · {defaultFat}F</p>
+                            </button>
+                            <button onClick={() => meal.isCustom ? removeCustomPreset(meal.id) : hidePreset(meal.name)} className="ml-2 p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Catch-all for custom presets with unrecognized/missing category */}
+              {(() => {
+                const validCategories = ["Protein", "Carbs", "Fats", "Drinks", "Alcohol"];
+                const uncategorized = customPresets.filter(m => !validCategories.includes(m.category));
+                if (uncategorized.length === 0) return null;
+                return (
+                  <div className="mb-4">
+                    <h3 className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider mb-2 px-1">Other</h3>
+                    <div className="space-y-2">
+                      {uncategorized.map((meal, idx) => {
+                        const defaultCal = Math.round(meal.cal * meal.defaultQty);
+                        const defaultProtein = Math.round(meal.protein * meal.defaultQty * 10) / 10;
+                        const defaultCarbs = Math.round((meal.carbs || 0) * meal.defaultQty * 10) / 10;
+                        const defaultFat = Math.round((meal.fat || 0) * meal.defaultQty * 10) / 10;
+                        const useCount = usageCounts[meal.name] || 0;
+                        return (
+                          <div key={meal.id || idx} className="w-full bg-white rounded-xl p-3 shadow-sm border border-stone-200 flex items-center justify-between">
+                            <button onClick={() => openPortionModal(meal)} className="flex-1 min-w-0 text-left hover:opacity-70">
+                              <div className="flex items-center gap-2">
+                                <p className="text-sm font-medium text-stone-900 truncate">{meal.name}</p>
+                                <span className="text-[9px] bg-stone-900 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">Custom</span>
+                                {useCount >= 3 && <span className="text-[10px] bg-stone-100 text-stone-600 px-1.5 py-0.5 rounded-full flex-shrink-0">{useCount}×</span>}
+                              </div>
+                              <p className="text-xs text-stone-500">{defaultCal} cal · {defaultProtein}P · {defaultCarbs}C · {defaultFat}F</p>
+                            </button>
+                            <button onClick={() => removeCustomPreset(meal.id)} className="ml-2 p-2 text-stone-400 hover:text-red-500 rounded-lg hover:bg-stone-50">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+              {hiddenPresets.length > 0 && (
+                <button onClick={restoreAllPresets} className="text-xs text-stone-500 hover:text-stone-700 underline mt-2">
+                  Restore {hiddenPresets.length} hidden item{hiddenPresets.length > 1 ? "s" : ""}
+                </button>
+              )}
+            </div>
+
+            {/* Custom Entry */}
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+              <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">Custom Entry</h2>
+              <div className="space-y-2">
+                <input type="text" placeholder="Food name" value={customName} onChange={(e) => setCustomName(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                <div className="flex gap-2">
+                  <input type="number" placeholder="Qty (e.g., 6)" value={customQty} onChange={(e) => setCustomQty(e.target.value)} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                  <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value)} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 bg-white">
+                    <option value="oz">oz</option>
+                    <option value="g">g</option>
+                    <option value="cup">cup</option>
+                    <option value="tbsp">tbsp</option>
+                    <option value="tsp">tsp</option>
+                    <option value="piece">piece</option>
+                    <option value="slice">slice</option>
+                    <option value="serving">serving</option>
+                    <option value="drink">drink</option>
+                    <option value="shake">shake</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <input type="number" placeholder="Calories" value={customCal} onChange={(e) => setCustomCal(e.target.value)} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                  <input type="number" placeholder="Protein (g)" value={customProtein} onChange={(e) => setCustomProtein(e.target.value)} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                </div>
+                <div className="flex gap-2">
+                  <input type="number" placeholder="Carbs (g)" value={customCarbs} onChange={(e) => setCustomCarbs(e.target.value)} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                  <input type="number" placeholder="Fat (g)" value={customFat} onChange={(e) => setCustomFat(e.target.value)} className="flex-1 min-w-0 px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                </div>
+                {/* ✅ Notes with 200-char limit and counter */}
+                <div>
+                  <textarea
+                    placeholder="Notes (optional) — portions, prep method, restaurant, etc."
+                    value={customNotes}
+                    onChange={(e) => setCustomNotes(e.target.value.slice(0, NOTES_MAX))}
+                    rows={2}
+                    maxLength={NOTES_MAX}
+                    className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 resize-none"
+                  />
+                  {customNotes.length > 0 && (
+                    <p className={`text-[10px] text-right mt-0.5 ${customNotes.length >= NOTES_MAX ? "text-red-500" : "text-stone-400"}`}>
+                      {customNotes.length}/{NOTES_MAX}
+                    </p>
+                  )}
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer py-1">
+                  <input type="checkbox" checked={saveAsPreset} onChange={(e) => setSaveAsPreset(e.target.checked)} className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500" />
+                  <span className="text-sm text-stone-700">Save as individual quick add</span>
+                </label>
+                {saveAsPreset && (
+                  <div className="pl-6">
+                    <label className="text-xs text-stone-500 mb-1 block">Category</label>
+                    <select value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 bg-white">
+                      <option value="auto">Auto-detect</option>
+                      <option value="Protein">Protein</option>
+                      <option value="Carbs">Carbs</option>
+                      <option value="Fats">Fats</option>
+                      <option value="Drinks">Drinks</option>
+                      <option value="Alcohol">Alcohol</option>
+                    </select>
+                  </div>
+                )}
+                <label className="flex items-center gap-2 cursor-pointer py-1">
+                  <input type="checkbox" checked={saveAsMeal} onChange={(e) => setSaveAsMeal(e.target.checked)} className="w-4 h-4 rounded border-stone-300 text-stone-900 focus:ring-stone-500" />
+                  <span className="text-sm text-stone-700">Save as meal quick add</span>
+                </label>
+                <button onClick={addCustom} disabled={!customName || !customCal} className="w-full bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium disabled:bg-stone-300 disabled:cursor-not-allowed hover:bg-stone-800 transition-colors">
+                  Add Entry
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "week" && <WeekView weeklyData={weeklyData} activeGoal={activeGoal} />}
+
+        {activeTab === "body" && (() => {
+          const sorted = [...inbodyScans].sort((a, b) => a.date.localeCompare(b.date));
+          const latest = sorted[sorted.length - 1] || null;
+          const earlierScans = sorted.slice(0, -1);
+          let baseline = null;
+          if (compareScanId) baseline = sorted.find((s) => s.id === compareScanId) || null;
+          if (!baseline && earlierScans.length > 0) baseline = earlierScans[earlierScans.length - 1];
+          const analysis = analyzeScans(latest, baseline);
+
+          const fmtDate = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const fmtDelta = (n, decimals = 1, suffix = "") => { const sign = n > 0 ? "+" : ""; return `${sign}${n.toFixed(decimals)}${suffix}`; };
+          const deltaColor = (n, goodWhenNegative = false) => {
+            if (Math.abs(n) < 0.05) return "text-stone-500";
+            const isGood = goodWhenNegative ? n < 0 : n > 0;
+            return isGood ? "text-emerald-600" : "text-red-600";
+          };
+
+          return (
+            <div className="space-y-4">
+              {!latest && (
+                <div className="bg-white rounded-2xl p-6 shadow-sm border border-stone-200 text-center">
+                  <p className="text-sm text-stone-600 mb-3">No InBody scans yet.</p>
+                  <button onClick={openScanModal} className="bg-stone-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-stone-800">Add your first scan</button>
+                </div>
+              )}
+              {latest && (
+                <>
+                  <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <p className="text-xs text-stone-500 uppercase tracking-wide">Latest Scan</p>
+                        <p className="text-sm font-semibold text-stone-900">{fmtDate(latest.date)}</p>
+                      </div>
+                      <button onClick={openScanModal} className="flex items-center gap-1 bg-stone-900 text-white rounded-lg px-3 py-1.5 text-xs font-medium hover:bg-stone-800">
+                        <Plus className="w-3 h-3" /> Add Scan
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-stone-50 rounded-lg p-3"><p className="text-xs text-stone-500">Weight</p><p className="text-xl font-bold text-stone-900">{latest.weight} <span className="text-xs font-normal text-stone-500">lbs</span></p></div>
+                      <div className="bg-stone-50 rounded-lg p-3"><p className="text-xs text-stone-500">Body Fat</p><p className="text-xl font-bold text-stone-900">{latest.bodyFat}<span className="text-xs font-normal text-stone-500">%</span></p></div>
+                      <div className="bg-stone-50 rounded-lg p-3"><p className="text-xs text-stone-500">Muscle Mass</p><p className="text-xl font-bold text-stone-900">{latest.skeletalMuscle} <span className="text-xs font-normal text-stone-500">lbs</span></p></div>
+                      <div className="bg-stone-50 rounded-lg p-3"><p className="text-xs text-stone-500">Fat Mass</p><p className="text-xl font-bold text-stone-900">{latest.bodyFatMass} <span className="text-xs font-normal text-stone-500">lbs</span></p></div>
+                      <div className="bg-stone-50 rounded-lg p-3 col-span-2"><p className="text-xs text-stone-500">Metabolic Rate</p><p className="text-xl font-bold text-stone-900">{latest.bmr} <span className="text-xs font-normal text-stone-500">cal/day</span></p></div>
+                    </div>
+                  </div>
+                  {baseline && analysis && (
+                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold">Comparison</p>
+                        {earlierScans.length > 1 && (
+                          <select value={compareScanId || baseline.id} onChange={(e) => setCompareScanId(e.target.value)} className="text-xs px-2 py-1 rounded border border-stone-200 bg-white">
+                            {earlierScans.map((s) => (<option key={s.id} value={s.id}>vs {fmtDate(s.date)}</option>))}
+                          </select>
+                        )}
+                      </div>
+                      <p className="text-xs text-stone-500 mb-3">{fmtDate(baseline.date)} → {fmtDate(latest.date)} · {analysis.days} days ({analysis.weeks.toFixed(1)} weeks)</p>
+                      <div className="space-y-2">
+                        {[
+                          { label: "Weight", from: baseline.weight, to: latest.weight, delta: analysis.weightDelta, suffix: " lbs", goodWhenNeg: true },
+                          { label: "Body Fat %", from: `${baseline.bodyFat}%`, to: `${latest.bodyFat}%`, delta: analysis.bfDelta, suffix: "%", goodWhenNeg: true },
+                          { label: "Muscle Mass", from: baseline.skeletalMuscle, to: latest.skeletalMuscle, delta: analysis.smmDelta, suffix: " lbs", goodWhenNeg: false },
+                          { label: "Fat Mass", from: baseline.bodyFatMass, to: latest.bodyFatMass, delta: analysis.bfmDelta, suffix: " lbs", goodWhenNeg: true },
+                          { label: "BMR", from: baseline.bmr, to: latest.bmr, delta: analysis.bmrDelta, suffix: " cal", goodWhenNeg: false },
+                        ].map(({ label, from, to, delta, suffix, goodWhenNeg }, i, arr) => (
+                          <div key={label} className={`flex items-center justify-between py-1.5 ${i < arr.length - 1 ? "border-b border-stone-100" : ""}`}>
+                            <span className="text-sm text-stone-600">{label}</span>
+                            <div className="text-right">
+                              <span className="text-sm text-stone-900">{from} → {to}</span>
+                              <span className={`ml-2 text-sm font-semibold ${deltaColor(delta, goodWhenNeg)}`}>{fmtDelta(delta, label === "BMR" ? 0 : 1, suffix)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {analysis && analysis.takes.length > 0 && (
+                    <div className="bg-stone-900 rounded-2xl p-4 text-white">
+                      <p className="text-xs text-stone-400 uppercase tracking-wide font-semibold mb-2">Coach's Take</p>
+                      <div className="space-y-1.5">{analysis.takes.map((t, i) => (<p key={i} className="text-sm leading-relaxed">{t}</p>))}</div>
+                    </div>
+                  )}
+                  {sorted.length > 0 && (
+                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+                      <p className="text-xs text-stone-500 uppercase tracking-wide font-semibold mb-3">History ({sorted.length})</p>
+                      <div className="space-y-2">
+                        {[...sorted].reverse().map((s) => (
+                          <div key={s.id} className="flex items-center justify-between py-2 border-b border-stone-100 last:border-0">
+                            <div>
+                              <p className="text-sm font-semibold text-stone-900">{fmtDate(s.date)}</p>
+                              <p className="text-xs text-stone-500">{s.weight} lbs · {s.bodyFat}% BF · {s.skeletalMuscle} lbs SMM</p>
+                            </div>
+                            <button onClick={() => deleteScan(s.id)} className="text-stone-400 hover:text-red-600 p-1"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })()}
+
+        {activeTab === "goal" && <GoalView goalIdx={goalIdx} setGoalIdx={setGoalIdx} weeklyData={weeklyData} activeGoal={activeGoal} />}
+        {activeTab === "why" && <WhyView weeklyData={weeklyData} activeGoal={activeGoal} weeklyCommitment={weeklyCommitment} saveCommitment={saveCommitment} commitmentWeekStart={commitmentWeekStart} streakCount={streakCount} goalSettings={goalSettings} onEditGoal={() => setShowGoalEditModal(true)} />}
+      </div>
+
+      {/* Meal Builder Modal */}
+      {mealBuilder && (
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => { setMealBuilder(null); setBuilderShowCustomForm(false); setBuilderCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz", saveToQuickAdd: false, category: "auto" }); }}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-stone-900 mb-3">Build a Meal</h3>
+            <input type="text" placeholder="Meal name (e.g., Lunch prep)" value={mealBuilder.name} onChange={(e) => setMealBuilder({ ...mealBuilder, name: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 mb-2" />
+            {/* ✅ Notes field in meal builder with 200-char limit */}
+            <div className="mb-3">
+              <textarea
+                placeholder="Notes (optional) — prep method, restaurant, meal context…"
+                value={mealBuilder.notes || ""}
+                onChange={(e) => setMealBuilder({ ...mealBuilder, notes: e.target.value.slice(0, NOTES_MAX) })}
+                rows={2}
+                maxLength={NOTES_MAX}
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400 resize-none"
+              />
+              {(mealBuilder.notes || "").length > 0 && (
+                <p className={`text-[10px] text-right mt-0.5 ${(mealBuilder.notes || "").length >= NOTES_MAX ? "text-red-500" : "text-stone-400"}`}>
+                  {(mealBuilder.notes || "").length}/{NOTES_MAX}
+                </p>
+              )}
+            </div>
+
+            {mealBuilder.ingredients.length > 0 && (
+              <div className="mb-3 space-y-1">
+                <p className="text-xs font-semibold text-stone-600 uppercase tracking-wide">Ingredients</p>
+                {mealBuilder.ingredients.map((ing) => (
+                  <div key={ing.id} className="flex items-center justify-between bg-stone-50 rounded-lg px-3 py-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-stone-900 truncate">{ing.qty} {ing.meal.unitLabel} {ing.meal.name.toLowerCase()}</p>
+                      <p className="text-xs text-stone-500">{Math.round(ing.meal.cal * ing.qty)} cal · {Math.round(ing.meal.protein * ing.qty * 10) / 10}P</p>
+                    </div>
+                    <div className="flex items-center gap-1 ml-2">
+                      <button onClick={() => setMealBuilder({ ...mealBuilder, ingredients: mealBuilder.ingredients.map(i => i.id === ing.id ? { ...i, qty: Math.max(0.25, Math.round((i.qty - 0.25) * 100) / 100) } : i) })} className="w-6 h-6 rounded bg-stone-200 text-stone-700 text-sm font-bold hover:bg-stone-300 flex items-center justify-center">−</button>
+                      <span className="text-xs font-semibold text-stone-800 w-8 text-center">{ing.qty}</span>
+                      <button onClick={() => setMealBuilder({ ...mealBuilder, ingredients: mealBuilder.ingredients.map(i => i.id === ing.id ? { ...i, qty: Math.round((i.qty + 0.25) * 100) / 100 } : i) })} className="w-6 h-6 rounded bg-stone-200 text-stone-700 text-sm font-bold hover:bg-stone-300 flex items-center justify-center">+</button>
+                      <button onClick={() => removeIngredientFromBuilder(ing.id)} className="ml-1 p-1 text-stone-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                  </div>
+                ))}
+                <div className="pt-2 border-t border-stone-100">
+                  <p className="text-xs text-stone-500">Total: <span className="font-semibold text-stone-900">{Math.round(mealBuilder.ingredients.reduce((s, i) => s + i.meal.cal * i.qty, 0))} cal · {Math.round(mealBuilder.ingredients.reduce((s, i) => s + i.meal.protein * i.qty, 0) * 10) / 10}P</span></p>
+                </div>
+              </div>
+            )}
+
+            <p className="text-xs font-semibold text-stone-600 uppercase tracking-wide mb-2">Add Ingredients</p>
+            <div className="flex-1 overflow-y-auto mb-3 border border-stone-100 rounded-lg">
+              <div>
+                {CATEGORY_ORDER.map((category) => {
+                  const builtIn = PRESET_MEALS.filter(m => m.category === category && !hiddenPresets.includes(m.name));
+                  const custom = customPresets.filter(m => m.category === category && !hiddenPresets.includes(m.name));
+                  const all = [...builtIn, ...custom].sort((a, b) => (usageCounts[b.name] || 0) - (usageCounts[a.name] || 0));
+                  if (all.length === 0) return null;
+                  return (
+                    <div key={category}>
+                      <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider px-3 pt-2 pb-1 bg-stone-50 border-b border-stone-100">{category}</p>
+                      {all.map((meal, idx) => (
+                        <button key={meal.id || `builtin-${idx}`} onClick={() => { setIngredientPickerModal(meal); setIngredientPickerQty(meal.defaultQty); }} className="w-full text-left px-3 py-2 text-xs hover:bg-stone-50 border-b border-stone-100 last:border-0 flex items-center justify-between">
+                          <span className="text-stone-700">{meal.defaultQty} {meal.unitLabel} {meal.name.toLowerCase()}{meal.isCustom && <span className="ml-1 text-stone-400">· custom</span>}</span>
+                          <Plus className="w-3 h-3 text-stone-400 flex-shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })}
+                {/* Catch-all for custom presets with missing/unrecognized category */}
+                {(() => {
+                  const validCategories = ["Protein", "Carbs", "Fats", "Drinks", "Alcohol"];
+                  const uncategorized = customPresets.filter(m => !validCategories.includes(m.category) && !hiddenPresets.includes(m.name));
+                  if (uncategorized.length === 0) return null;
+                  return (
+                    <div>
+                      <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider px-3 pt-2 pb-1 bg-stone-50 border-b border-stone-100">Other</p>
+                      {uncategorized.map((meal, idx) => (
+                        <button key={meal.id || idx} onClick={() => { setIngredientPickerModal(meal); setIngredientPickerQty(meal.defaultQty); }} className="w-full text-left px-3 py-2 text-xs hover:bg-stone-50 border-b border-stone-100 last:border-0 flex items-center justify-between">
+                          <span className="text-stone-700">{meal.defaultQty} {meal.unitLabel} {meal.name.toLowerCase()} <span className="ml-1 text-stone-400">· custom</span></span>
+                          <Plus className="w-3 h-3 text-stone-400 flex-shrink-0" />
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+                {/* Custom ingredient entry */}
+                {!builderShowCustomForm ? (
+                  <button
+                    onClick={() => setBuilderShowCustomForm(true)}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-stone-50 flex items-center justify-between text-stone-500 italic"
+                  >
+                    <span>+ Enter custom ingredient…</span>
+                    <Plus className="w-3 h-3 text-stone-400" />
+                  </button>
+                ) : (
+                  <div className="p-3 bg-stone-50 border-t border-stone-200 space-y-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="text-xs font-semibold text-stone-600">Custom Ingredient</p>
+                      <button onClick={() => { setBuilderShowCustomForm(false); setBuilderCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz", saveToQuickAdd: false, category: "auto" }); }} className="text-xs text-stone-400 hover:text-stone-600">✕</button>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Name (e.g., Greek yogurt)"
+                      value={builderCustomIng.name}
+                      onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, name: e.target.value })}
+                      className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400"
+                    />
+                    <div className="flex gap-2">
+                      <input type="number" placeholder="Qty" value={builderCustomIng.qty} onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, qty: e.target.value })} className="w-16 px-2 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                      <select value={builderCustomIng.unit} onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, unit: e.target.value })} className="flex-1 px-2 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400 bg-white">
+                        <option value="oz">oz</option>
+                        <option value="g">g</option>
+                        <option value="cup">cup</option>
+                        <option value="tbsp">tbsp</option>
+                        <option value="tsp">tsp</option>
+                        <option value="piece">piece</option>
+                        <option value="slice">slice</option>
+                        <option value="serving">serving</option>
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="number" placeholder="Calories" value={builderCustomIng.cal} onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, cal: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                      <input type="number" placeholder="Protein (g)" value={builderCustomIng.protein} onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, protein: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                      <input type="number" placeholder="Carbs (g)" value={builderCustomIng.carbs} onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, carbs: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                      <input type="number" placeholder="Fat (g)" value={builderCustomIng.fat} onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, fat: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer py-0.5">
+                      <input
+                        type="checkbox"
+                        checked={builderCustomIng.saveToQuickAdd}
+                        onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, saveToQuickAdd: e.target.checked })}
+                        className="w-4 h-4 rounded border-stone-300"
+                      />
+                      <span className="text-xs text-stone-600">Also save to Quick Adds</span>
+                    </label>
+                    {builderCustomIng.saveToQuickAdd && (
+                      <select value={builderCustomIng.category} onChange={(e) => setBuilderCustomIng({ ...builderCustomIng, category: e.target.value })} className="w-full px-2 py-1.5 rounded-lg border border-stone-200 text-xs focus:outline-none focus:border-stone-400 bg-white">
+                        <option value="auto">Auto-detect category</option>
+                        <option value="Protein">Protein</option>
+                        <option value="Carbs">Carbs</option>
+                        <option value="Fats">Fats</option>
+                        <option value="Drinks">Drinks</option>
+                        <option value="Alcohol">Alcohol</option>
+                      </select>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (!builderCustomIng.name || !builderCustomIng.cal) return;
+                        const qty = parseFloat(builderCustomIng.qty) || 1;
+                        const unit = builderCustomIng.unit;
+                        const unitLabel = unit.endsWith("s") || unit === "oz" ? unit : `${unit}s`;
+                        const cal = parseFloat(builderCustomIng.cal) || 0;
+                        const protein = parseFloat(builderCustomIng.protein) || 0;
+                        const carbs = parseFloat(builderCustomIng.carbs) || 0;
+                        const fat = parseFloat(builderCustomIng.fat) || 0;
+                        const syntheticMeal = {
+                          name: builderCustomIng.name,
+                          unitLabel,
+                          unit,
+                          cal: cal / qty,
+                          protein: protein / qty,
+                          carbs: carbs / qty,
+                          fat: fat / qty,
+                          defaultQty: qty,
+                          _isCustomIng: true,
+                        };
+                        addIngredientToBuilder(syntheticMeal, qty);
+                        if (builderCustomIng.saveToQuickAdd) {
+                          saveIngredientToQuickAdd({ name: builderCustomIng.name, cal, protein, carbs, fat, qty, unit, category: builderCustomIng.category });
+                        }
+                        setBuilderCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz", saveToQuickAdd: false, category: "auto" });
+                        setBuilderShowCustomForm(false);
+                      }}
+                      disabled={!builderCustomIng.name || !builderCustomIng.cal}
+                      className="w-full bg-stone-900 text-white rounded-lg py-2 text-xs font-medium hover:bg-stone-800 disabled:bg-stone-300"
+                    >
+                      Add to Meal
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => { setMealBuilder(null); setBuilderShowCustomForm(false); setBuilderCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz", saveToQuickAdd: false, category: "auto" }); }} className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200">Cancel</button>
+              <button onClick={saveMeal} disabled={!mealBuilder.name || mealBuilder.ingredients.length === 0} className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium disabled:bg-stone-300 hover:bg-stone-800">Save Meal</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ingredient Portion Picker Modal */}
+      {ingredientPickerModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-[60] p-4" onClick={() => setIngredientPickerModal(null)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-stone-900 mb-0.5">{ingredientPickerModal.name}</h3>
+            <p className="text-xs text-stone-500 mb-4">Per {ingredientPickerModal.unit}: {Math.round(ingredientPickerModal.cal)} cal · {Math.round(ingredientPickerModal.protein * 10) / 10}P · {Math.round((ingredientPickerModal.carbs || 0) * 10) / 10}C · {Math.round((ingredientPickerModal.fat || 0) * 10) / 10}F</p>
+            <label className="text-sm font-medium text-stone-700 mb-2 block">How much? ({ingredientPickerModal.unitLabel})</label>
+            <div className="flex items-center gap-3 mb-4">
+              <button onClick={() => setIngredientPickerQty(q => Math.max(0.25, (parseFloat(q) || 0) - 0.25))} className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200 active:bg-stone-300 flex-shrink-0">−</button>
+              <input type="number" step="0.25" min="0.25" value={ingredientPickerQty} onChange={(e) => setIngredientPickerQty(e.target.value)} className="flex-1 text-center px-3 py-2 rounded-lg border border-stone-200 text-lg font-semibold focus:outline-none focus:border-stone-400" />
+              <button onClick={() => setIngredientPickerQty(q => (parseFloat(q) || 0) + 0.25)} className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200 active:bg-stone-300 flex-shrink-0">+</button>
+            </div>
+            <div className="bg-stone-50 rounded-lg p-3 mb-4">
+              <p className="text-xs text-stone-500 mb-1">Will add:</p>
+              <p className="text-lg font-bold text-stone-900 mb-0.5">{Math.round(ingredientPickerModal.cal * (parseFloat(ingredientPickerQty) || 0))} cal</p>
+              <p className="text-xs text-stone-500">{Math.round(ingredientPickerModal.protein * (parseFloat(ingredientPickerQty) || 0) * 10) / 10}g protein · {Math.round((ingredientPickerModal.carbs || 0) * (parseFloat(ingredientPickerQty) || 0) * 10) / 10}g carbs · {Math.round((ingredientPickerModal.fat || 0) * (parseFloat(ingredientPickerQty) || 0) * 10) / 10}g fat</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setIngredientPickerModal(null)} className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200">Cancel</button>
+              <button onClick={() => { const qty = parseFloat(ingredientPickerQty) || 0; if (qty > 0) addIngredientToBuilder(ingredientPickerModal, qty); setIngredientPickerModal(null); }} disabled={(parseFloat(ingredientPickerQty) || 0) <= 0} className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800 disabled:bg-stone-300">Add Ingredient</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ Meal Scale Modal — now shows notes */}
+      {mealScaleModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => setMealScaleModal(null)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-stone-900 mb-1">{mealScaleModal.name}</h3>
+            <p className="text-xs text-stone-500 mb-1">Base: {mealScaleModal.cal} cal · {mealScaleModal.protein}P · {mealScaleModal.carbs}C · {mealScaleModal.fat}F</p>
+            {/* ✅ Notes shown in modal before logging */}
+            {mealScaleModal.notes && (
+              <p className="text-xs text-stone-500 italic mb-3 leading-relaxed border-t border-stone-100 pt-2">{mealScaleModal.notes}</p>
+            )}
+            {mealScaleModal.ingredients && mealScaleModal.ingredients.length > 0 && (
+              <p className="text-[10px] text-stone-400 mb-3 leading-relaxed">
+                {mealScaleModal.ingredients.map(i => `${i.qty} ${i.unitLabel} ${i.name.toLowerCase()}`).join(" · ")}
+              </p>
+            )}
+            <label className="text-sm font-medium text-stone-700 mb-2 block">Portion (1× = full meal)</label>
+            <div className="flex items-center gap-3 mb-4">
+              <button onClick={() => setMealScale(Math.max(0, (parseFloat(mealScale) || 0) - 0.25))} className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200">−</button>
+              <input type="number" step="0.25" min="0" value={mealScale} onChange={(e) => setMealScale(e.target.value)} className="flex-1 text-center px-3 py-2 rounded-lg border border-stone-200 text-lg font-semibold focus:outline-none focus:border-stone-400" />
+              <button onClick={() => setMealScale((parseFloat(mealScale) || 0) + 0.25)} className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200">+</button>
+            </div>
+            <div className="bg-stone-50 rounded-lg p-3 mb-4">
+              <p className="text-sm text-stone-600 mb-1">Will log:</p>
+              <p className="text-lg font-bold text-stone-900 mb-1">{Math.round(mealScaleModal.cal * (parseFloat(mealScale) || 0))} cal</p>
+              <p className="text-xs text-stone-500">{Math.round(mealScaleModal.protein * (parseFloat(mealScale) || 0) * 10) / 10}g protein · {Math.round(mealScaleModal.carbs * (parseFloat(mealScale) || 0) * 10) / 10}g carbs · {Math.round(mealScaleModal.fat * (parseFloat(mealScale) || 0) * 10) / 10}g fat</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setMealScaleModal(null)} className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200">Cancel</button>
+              <button onClick={confirmMealLog} className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800">Add to Log</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Meal Modal */}
+      {editMealModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => { setEditMealModal(null); setEditMealShowPicker(false); setEditMealCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz" }); }}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-stone-900 mb-1">Edit Meal</h3>
+            <p className="text-xs text-stone-500 mb-4">Changes save to your Saved Meals list.</p>
+
+            {/* Name */}
+            <div className="mb-3">
+              <label className="text-xs font-medium text-stone-600 mb-1 block">Meal name</label>
+              <input
+                type="text"
+                value={editMealModal.name}
+                onChange={(e) => setEditMealModal({ ...editMealModal, name: e.target.value })}
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400"
+              />
+            </div>
+
+            {/* Ingredient-based meal — show editable qtys, macros auto-recalculate */}
+            {editMealModal.ingredients && !editMealModal.isOneShot ? (
+              <div className="mb-3">
+                <p className="text-xs font-medium text-stone-600 mb-2">Ingredients <span className="text-stone-400 font-normal">(macros auto-recalculate)</span></p>
+                <div className="space-y-2">
+                  {editMealModal.ingredients.map((ing, idx) => {
+                    const source = [...PRESET_MEALS, ...customPresets].find(p => p.name === ing.name);
+                    const qty = parseFloat(ing.qty) || 0;
+                    const perUnitCal = ing._cal !== undefined ? ing._cal : (source ? source.cal : null);
+                    const perUnitProtein = ing._protein !== undefined ? ing._protein : (source ? source.protein : null);
+                    const ingCal = perUnitCal !== null ? Math.round(perUnitCal * qty) : "—";
+                    const ingProtein = perUnitProtein !== null ? Math.round(perUnitProtein * qty * 10) / 10 : "—";
+                    return (
+                      <div key={idx} className="bg-stone-50 rounded-lg px-3 py-2">
+                        {/* Editable ingredient name */}
+                        <input
+                          type="text"
+                          value={ing.name}
+                          onChange={(e) => {
+                            const updated = editMealModal.ingredients.map((i, j) => j === idx ? { ...i, name: e.target.value } : i);
+                            setEditMealModal({ ...editMealModal, ingredients: updated });
+                          }}
+                          className="w-full text-sm font-medium text-stone-800 bg-transparent border-b border-stone-200 focus:border-stone-400 focus:outline-none mb-1.5 pb-0.5"
+                          placeholder="Ingredient name"
+                        />
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1 flex-shrink-0">
+                            <button
+                              onClick={() => {
+                                const newQty = Math.max(0.25, Math.round(((parseFloat(ing.qty) || 0) - 0.25) * 100) / 100);
+                                const updated = editMealModal.ingredients.map((i, j) => j === idx ? { ...i, qty: String(newQty) } : i);
+                                setEditMealModal({ ...editMealModal, ingredients: updated });
+                              }}
+                              className="w-6 h-6 rounded bg-stone-200 text-stone-700 text-sm font-bold hover:bg-stone-300 flex items-center justify-center"
+                            >−</button>
+                            <input
+                              type="number"
+                              step="0.25"
+                              min="0.25"
+                              value={ing.qty}
+                              onChange={(e) => {
+                                const updated = editMealModal.ingredients.map((i, j) => j === idx ? { ...i, qty: e.target.value } : i);
+                                setEditMealModal({ ...editMealModal, ingredients: updated });
+                              }}
+                              className="w-14 text-center px-1 py-1 rounded border border-stone-200 text-sm font-semibold focus:outline-none focus:border-stone-400"
+                            />
+                            <button
+                              onClick={() => {
+                                const newQty = Math.round(((parseFloat(ing.qty) || 0) + 0.25) * 100) / 100;
+                                const updated = editMealModal.ingredients.map((i, j) => j === idx ? { ...i, qty: String(newQty) } : i);
+                                setEditMealModal({ ...editMealModal, ingredients: updated });
+                              }}
+                              className="w-6 h-6 rounded bg-stone-200 text-stone-700 text-sm font-bold hover:bg-stone-300 flex items-center justify-center"
+                            >+</button>
+                            <span className="text-xs text-stone-500 mx-1">{ing.unitLabel}</span>
+                            {/* Remove ingredient button */}
+                            <button
+                              onClick={() => {
+                                const updated = editMealModal.ingredients.filter((_, j) => j !== idx);
+                                setEditMealModal({ ...editMealModal, ingredients: updated });
+                              }}
+                              className="w-6 h-6 rounded text-stone-400 hover:text-red-500 hover:bg-red-50 flex items-center justify-center ml-0.5"
+                              title="Remove ingredient"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-stone-400 ml-1">{ingCal} cal · {ingProtein}P</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Add ingredient picker */}
+                <div className="mt-2">
+                  {!editMealShowPicker && (
+                    <button
+                      onClick={() => setEditMealShowPicker("list")}
+                      className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg border border-dashed border-stone-300 text-xs font-medium text-stone-500 hover:border-stone-400 hover:text-stone-700 hover:bg-stone-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" /> Add Ingredient
+                    </button>
+                  )}
+
+                  {editMealShowPicker === "list" && (
+                    <div className="border border-stone-200 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-stone-50 border-b border-stone-200">
+                        <p className="text-xs font-semibold text-stone-600">Quick Adds</p>
+                        <button onClick={() => setEditMealShowPicker(false)} className="text-xs text-stone-400 hover:text-stone-600">✕ Close</button>
+                      </div>
+                      <div className="max-h-44 overflow-y-auto">
+                        {CATEGORY_ORDER.map((category) => {
+                          const builtIn = PRESET_MEALS.filter(m => m.category === category && !hiddenPresets.includes(m.name));
+                          const custom = customPresets.filter(m => m.category === category && !hiddenPresets.includes(m.name));
+                          const all = [...builtIn, ...custom].sort((a, b) => (usageCounts[b.name] || 0) - (usageCounts[a.name] || 0));
+                          if (all.length === 0) return null;
+                          return (
+                            <div key={category}>
+                              <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider px-3 pt-1.5 pb-1 bg-stone-50 border-b border-stone-100">{category}</p>
+                              {all.map((preset, i) => (
+                                <button
+                                  key={preset.id || i}
+                                  onClick={() => {
+                                    const existingIdx = editMealModal.ingredients.findIndex(ing => ing.name === preset.name);
+                                    let updatedIngredients;
+                                    if (existingIdx >= 0) {
+                                      updatedIngredients = editMealModal.ingredients.map((ing, j) =>
+                                        j === existingIdx
+                                          ? { ...ing, qty: String(Math.round(((parseFloat(ing.qty) || 0) + preset.defaultQty) * 100) / 100) }
+                                          : ing
+                                      );
+                                    } else {
+                                      updatedIngredients = [
+                                        ...editMealModal.ingredients,
+                                        { name: preset.name, unitLabel: preset.unitLabel, qty: String(preset.defaultQty) },
+                                      ];
+                                    }
+                                    setEditMealModal({ ...editMealModal, ingredients: updatedIngredients });
+                                    setEditMealShowPicker(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-stone-50 border-b border-stone-100 last:border-0 flex items-center justify-between"
+                                >
+                                  <span className="text-stone-700">{preset.defaultQty} {preset.unitLabel} {preset.name.toLowerCase()}{preset.isCustom && <span className="ml-1 text-stone-400">· custom</span>}</span>
+                                  <Plus className="w-3 h-3 text-stone-400 flex-shrink-0" />
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })}
+                        {/* Catch-all for custom presets with missing/unrecognized category */}
+                        {(() => {
+                          const validCategories = ["Protein", "Carbs", "Fats", "Drinks", "Alcohol"];
+                          const uncategorized = customPresets.filter(m => !validCategories.includes(m.category) && !hiddenPresets.includes(m.name));
+                          if (uncategorized.length === 0) return null;
+                          return (
+                            <div>
+                              <p className="text-[10px] font-semibold text-stone-400 uppercase tracking-wider px-3 pt-1.5 pb-1 bg-stone-50 border-b border-stone-100">Other</p>
+                              {uncategorized.map((preset, i) => (
+                                <button
+                                  key={preset.id || i}
+                                  onClick={() => {
+                                    const existingIdx = editMealModal.ingredients.findIndex(ing => ing.name === preset.name);
+                                    let updatedIngredients;
+                                    if (existingIdx >= 0) {
+                                      updatedIngredients = editMealModal.ingredients.map((ing, j) =>
+                                        j === existingIdx
+                                          ? { ...ing, qty: String(Math.round(((parseFloat(ing.qty) || 0) + preset.defaultQty) * 100) / 100) }
+                                          : ing
+                                      );
+                                    } else {
+                                      updatedIngredients = [
+                                        ...editMealModal.ingredients,
+                                        { name: preset.name, unitLabel: preset.unitLabel, qty: String(preset.defaultQty) },
+                                      ];
+                                    }
+                                    setEditMealModal({ ...editMealModal, ingredients: updatedIngredients });
+                                    setEditMealShowPicker(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-stone-50 border-b border-stone-100 last:border-0 flex items-center justify-between"
+                                >
+                                  <span className="text-stone-700">{preset.defaultQty} {preset.unitLabel} {preset.name.toLowerCase()} <span className="ml-1 text-stone-400">· custom</span></span>
+                                  <Plus className="w-3 h-3 text-stone-400 flex-shrink-0" />
+                                </button>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                        {/* Custom ingredient entry option */}
+                        <button
+                          onClick={() => setEditMealShowPicker("custom")}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-stone-50 flex items-center justify-between text-stone-500 italic"
+                        >
+                          <span>+ Enter custom ingredient…</span>
+                          <Plus className="w-3 h-3 text-stone-400 flex-shrink-0" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {editMealShowPicker === "custom" && (
+                    <div className="border border-stone-200 rounded-lg overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 bg-stone-50 border-b border-stone-200">
+                        <p className="text-xs font-semibold text-stone-600">Custom Ingredient</p>
+                        <button onClick={() => setEditMealShowPicker("list")} className="text-xs text-stone-400 hover:text-stone-600">← Back</button>
+                      </div>
+                      <div className="p-3 space-y-2">
+                        <input
+                          type="text"
+                          placeholder="Name (e.g., Greek yogurt)"
+                          value={editMealCustomIng.name}
+                          onChange={(e) => setEditMealCustomIng({ ...editMealCustomIng, name: e.target.value })}
+                          className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400"
+                        />
+                        <div className="flex gap-2">
+                          <input type="number" placeholder="Qty" value={editMealCustomIng.qty} onChange={(e) => setEditMealCustomIng({ ...editMealCustomIng, qty: e.target.value })} className="w-16 px-2 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                          <select value={editMealCustomIng.unit} onChange={(e) => setEditMealCustomIng({ ...editMealCustomIng, unit: e.target.value })} className="flex-1 px-2 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400 bg-white">
+                            <option value="oz">oz</option>
+                            <option value="g">g</option>
+                            <option value="cup">cup</option>
+                            <option value="tbsp">tbsp</option>
+                            <option value="tsp">tsp</option>
+                            <option value="piece">piece</option>
+                            <option value="slice">slice</option>
+                            <option value="serving">serving</option>
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input type="number" placeholder="Calories" value={editMealCustomIng.cal} onChange={(e) => setEditMealCustomIng({ ...editMealCustomIng, cal: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                          <input type="number" placeholder="Protein (g)" value={editMealCustomIng.protein} onChange={(e) => setEditMealCustomIng({ ...editMealCustomIng, protein: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                          <input type="number" placeholder="Carbs (g)" value={editMealCustomIng.carbs} onChange={(e) => setEditMealCustomIng({ ...editMealCustomIng, carbs: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                          <input type="number" placeholder="Fat (g)" value={editMealCustomIng.fat} onChange={(e) => setEditMealCustomIng({ ...editMealCustomIng, fat: e.target.value })} className="w-full px-2.5 py-1.5 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400" />
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer py-0.5">
+                          <input
+                            type="checkbox"
+                            checked={editMealCustomIngSaveToQuickAdd}
+                            onChange={(e) => setEditMealCustomIngSaveToQuickAdd(e.target.checked)}
+                            className="w-4 h-4 rounded border-stone-300"
+                          />
+                          <span className="text-xs text-stone-600">Also save to Quick Adds</span>
+                        </label>
+                        <button
+                          onClick={() => {
+                            if (!editMealCustomIng.name || !editMealCustomIng.cal) return;
+                            const qty = parseFloat(editMealCustomIng.qty) || 1;
+                            const unit = editMealCustomIng.unit;
+                            const unitLabel = unit.endsWith("s") || unit === "oz" ? unit : `${unit}s`;
+                            const cal = parseFloat(editMealCustomIng.cal) || 0;
+                            const protein = parseFloat(editMealCustomIng.protein) || 0;
+                            const carbs = parseFloat(editMealCustomIng.carbs) || 0;
+                            const fat = parseFloat(editMealCustomIng.fat) || 0;
+                            const newIng = {
+                              name: editMealCustomIng.name,
+                              unitLabel,
+                              qty: String(qty),
+                              _cal: cal / qty,
+                              _protein: protein / qty,
+                              _carbs: carbs / qty,
+                              _fat: fat / qty,
+                            };
+                            setEditMealModal({ ...editMealModal, ingredients: [...editMealModal.ingredients, newIng] });
+                            if (editMealCustomIngSaveToQuickAdd) {
+                              saveIngredientToQuickAdd({ name: editMealCustomIng.name, cal, protein, carbs, fat, qty, unit, category: "auto" });
+                            }
+                            setEditMealCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz" });
+                            setEditMealCustomIngSaveToQuickAdd(false);
+                            setEditMealShowPicker(false);
+                          }}
+                          disabled={!editMealCustomIng.name || !editMealCustomIng.cal}
+                          className="w-full bg-stone-900 text-white rounded-lg py-2 text-xs font-medium hover:bg-stone-800 disabled:bg-stone-300"
+                        >
+                          Add to Meal
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Live total preview */}
+                {(() => {
+                  const allPoss = [...PRESET_MEALS, ...customPresets];
+                  let previewCal = 0, previewProtein = 0, previewCarbs = 0, previewFat = 0;
+                  editMealModal.ingredients.forEach(ing => {
+                    const qty = parseFloat(ing.qty) || 0;
+                    if (ing._cal !== undefined) {
+                      previewCal += ing._cal * qty;
+                      previewProtein += ing._protein * qty;
+                      previewCarbs += (ing._carbs || 0) * qty;
+                      previewFat += (ing._fat || 0) * qty;
+                    } else {
+                      const src = allPoss.find(p => p.name === ing.name);
+                      if (src) {
+                        previewCal += src.cal * qty;
+                        previewProtein += src.protein * qty;
+                        previewCarbs += (src.carbs || 0) * qty;
+                        previewFat += (src.fat || 0) * qty;
+                      }
+                    }
+                  });
+                  return (
+                    <div className="mt-2 bg-stone-900 rounded-lg px-3 py-2 text-white">
+                      <p className="text-xs text-stone-400 mb-0.5">New total</p>
+                      <p className="text-sm font-semibold">{Math.round(previewCal)} cal · {Math.round(previewProtein * 10) / 10}P · {Math.round(previewCarbs * 10) / 10}C · {Math.round(previewFat * 10) / 10}F</p>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : (
+              /* One-shot / manual meal — edit macros directly */
+              <div className="mb-3 space-y-2">
+                <p className="text-xs font-medium text-stone-600 mb-1">Macros</p>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-stone-500 mb-0.5 block">Calories</label>
+                    <input type="number" value={editMealModal.cal} onChange={(e) => setEditMealModal({ ...editMealModal, cal: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] text-stone-500 mb-0.5 block">Protein (g)</label>
+                    <input type="number" value={editMealModal.protein} onChange={(e) => setEditMealModal({ ...editMealModal, protein: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="flex-1">
+                    <label className="text-[10px] text-stone-500 mb-0.5 block">Carbs (g)</label>
+                    <input type="number" value={editMealModal.carbs} onChange={(e) => setEditMealModal({ ...editMealModal, carbs: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-[10px] text-stone-500 mb-0.5 block">Fat (g)</label>
+                    <input type="number" value={editMealModal.fat} onChange={(e) => setEditMealModal({ ...editMealModal, fat: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Notes */}
+            <div className="mb-4">
+              <label className="text-xs font-medium text-stone-600 mb-1 block">Notes</label>
+              <textarea
+                placeholder="Prep method, restaurant, context…"
+                value={editMealModal.notes}
+                onChange={(e) => setEditMealModal({ ...editMealModal, notes: e.target.value.slice(0, NOTES_MAX) })}
+                rows={2}
+                maxLength={NOTES_MAX}
+                className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400 resize-none"
+              />
+              {editMealModal.notes.length > 0 && (
+                <p className={`text-[10px] text-right mt-0.5 ${editMealModal.notes.length >= NOTES_MAX ? "text-red-500" : "text-stone-400"}`}>
+                  {editMealModal.notes.length}/{NOTES_MAX}
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => { setEditMealModal(null); setEditMealShowPicker(false); setEditMealCustomIng({ name: "", cal: "", protein: "", carbs: "", fat: "", qty: "1", unit: "oz" }); }} className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200">Cancel</button>
+              <button onClick={updateMeal} disabled={!editMealModal.name.trim()} className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800 disabled:bg-stone-300">Save Changes</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* InBody Scan Modal */}
+      {scanModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => setScanModal(null)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-stone-900 mb-1">Add InBody Scan</h3>
+            <p className="text-xs text-stone-500 mb-4">Enter results from your scan.</p>
+            <div className="space-y-2">
+              {[
+                { label: "Scan Date", key: "date", type: "date" },
+                { label: "Weight (lbs)", key: "weight", type: "number", step: "0.1", placeholder: "e.g., 250" },
+                { label: "Body Fat %", key: "bodyFat", type: "number", step: "0.1", placeholder: "e.g., 23.7" },
+                { label: "Skeletal Muscle Mass (lbs)", key: "skeletalMuscle", type: "number", step: "0.1", placeholder: "e.g., 108" },
+                { label: "Body Fat Mass (lbs)", key: "bodyFatMass", type: "number", step: "0.1", placeholder: "e.g., 60" },
+                { label: "Metabolic Rate (kcal)", key: "bmr", type: "number", step: "1", placeholder: "e.g., 2649" },
+              ].map(({ label, key, type, step, placeholder }) => (
+                <div key={key}>
+                  <label className="text-xs text-stone-500 mb-1 block">{label}</label>
+                  <input type={type} step={step} placeholder={placeholder} value={scanModal[key]} onChange={(e) => setScanModal({ ...scanModal, [key]: e.target.value })} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2 mt-4">
+              <button onClick={() => setScanModal(null)} className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200">Cancel</button>
+              <button onClick={saveScan} disabled={!scanModal.date || !scanModal.weight} className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium disabled:bg-stone-300 disabled:cursor-not-allowed hover:bg-stone-800">Save Scan</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Portion Modal */}
+      {portionModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-end sm:items-center justify-center z-50 p-4" onClick={() => setPortionModal(null)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-stone-900 mb-1">{portionModal.name}</h3>
+            <p className="text-xs text-stone-500 mb-4">{portionModal.cal} cal · {portionModal.protein}g protein per {portionModal.unit}</p>
+            <label className="text-sm font-medium text-stone-700 mb-2 block">How many {portionModal.unitLabel}?</label>
+            <div className="flex items-center gap-3 mb-4">
+              <button onClick={() => setPortionQty(Math.max(0, (parseFloat(portionQty) || 0) - 0.5))} className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200 active:bg-stone-300">−</button>
+              <input type="number" step="0.5" min="0" value={portionQty} onChange={(e) => setPortionQty(e.target.value)} className="flex-1 text-center px-3 py-2 rounded-lg border border-stone-200 text-lg font-semibold focus:outline-none focus:border-stone-400" />
+              <button onClick={() => setPortionQty((parseFloat(portionQty) || 0) + 0.5)} className="w-10 h-10 rounded-lg bg-stone-100 text-stone-700 text-xl font-bold hover:bg-stone-200 active:bg-stone-300">+</button>
+            </div>
+            <div className="bg-stone-50 rounded-lg p-3 mb-4">
+              <p className="text-sm text-stone-600 mb-1">Will log:</p>
+              <p className="text-lg font-bold text-stone-900 mb-1">{Math.round(portionModal.cal * (parseFloat(portionQty) || 0))} cal</p>
+              <p className="text-xs text-stone-500">{Math.round(portionModal.protein * (parseFloat(portionQty) || 0) * 10) / 10}g protein · {Math.round((portionModal.carbs || 0) * (parseFloat(portionQty) || 0) * 10) / 10}g carbs · {Math.round((portionModal.fat || 0) * (parseFloat(portionQty) || 0) * 10) / 10}g fat</p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setPortionModal(null)} className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200">Cancel</button>
+              <button onClick={confirmPortion} className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800">Add to Log</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGoalEditModal && <GoalEditModal goalSettings={goalSettings} onSave={saveGoalSettings} onCancel={() => setShowGoalEditModal(false)} />}
+    </div>
+  );
+}
+
+function GoalEditModal({ goalSettings, onSave, onCancel }) {
+  const [draft, setDraft] = useState(goalSettings);
+  const updateField = (field, value) => setDraft({ ...draft, [field]: value });
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <h2 className="text-lg font-bold text-stone-900 mb-4">Edit Goal</h2>
+        <div className="space-y-3">
+          {[
+            { label: "Target weight (lbs)", key: "targetWeight", type: "number" },
+            { label: 'Target date (e.g., "mid-May", "June 15")', key: "targetDate", type: "text" },
+            { label: "Starting weight (lbs)", key: "startWeight", type: "number", placeholder: "e.g., 250" },
+            { label: 'Lbs per week pace (e.g., "1-1.2", "0.5")', key: "lbsPerWeek", type: "text" },
+            { label: 'Scan date (e.g., "May 6")', key: "scanDate", type: "text" },
+          ].map(({ label, key, type, placeholder }) => (
+            <div key={key}>
+              <label className="text-xs font-medium text-stone-600 mb-1 block">{label}</label>
+              <input type={type} value={draft[key]} onChange={(e) => updateField(key, e.target.value)} placeholder={placeholder} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400" />
+            </div>
+          ))}
+          {[
+            { label: "The Vision (main line)", key: "vision", rows: 3 },
+            { label: "The Vision (subtext)", key: "visionSubtext", rows: 2 },
+          ].map(({ label, key, rows }) => (
+            <div key={key}>
+              <label className="text-xs font-medium text-stone-600 mb-1 block">{label}</label>
+              <textarea value={draft[key]} onChange={(e) => updateField(key, e.target.value)} rows={rows} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-base focus:outline-none focus:border-stone-400 resize-none" />
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button onClick={onCancel} className="flex-1 bg-stone-100 text-stone-700 rounded-lg py-2.5 text-sm font-medium hover:bg-stone-200">Cancel</button>
+          <button onClick={() => onSave(draft)} className="flex-1 bg-stone-900 text-white rounded-lg py-2.5 text-sm font-medium hover:bg-stone-800">Save Goal</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WhyView({ weeklyData, activeGoal, weeklyCommitment, saveCommitment, commitmentWeekStart, streakCount, goalSettings, onEditGoal }) {
+  const [editingCommitment, setEditingCommitment] = useState(false);
+  const [commitmentDraft, setCommitmentDraft] = useState(weeklyCommitment || "");
+
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+  const currentMonday = new Date(now.setDate(diff));
+  const currentWeekStart = formatLocalDate(currentMonday);
+  const isCurrentWeek = commitmentWeekStart === currentWeekStart;
+  const displayCommitment = isCurrentWeek ? weeklyCommitment : "";
+
+  const loggedDays = weeklyData.filter((d) => d.hasData);
+  const avgCal = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.cal, 0) / loggedDays.length) : 0;
+  const avgProtein = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.protein, 0) / loggedDays.length) : 0;
+
+  let alignmentStatus = "nodata";
+  let alignmentMessage = "";
+
+  if (loggedDays.length === 0) {
+    alignmentStatus = "nodata";
+    alignmentMessage = "Start logging to see alignment with your goal.";
+  } else if (loggedDays.length < 3) {
+    alignmentStatus = "early";
+    alignmentMessage = `Only ${loggedDays.length} day${loggedDays.length === 1 ? "" : "s"} logged. Keep going — alignment builds with consistency.`;
+  } else {
+    const calOver = avgCal > activeGoal.cal + 150;
+    const proteinShort = avgProtein < activeGoal.protein - 20;
+    const calOk = avgCal <= activeGoal.cal + 150;
+    const proteinOk = avgProtein >= activeGoal.protein - 20;
+
+    if (calOk && proteinOk) {
+      alignmentStatus = "aligned";
+      alignmentMessage = "You're eating like the man you're building. Keep executing — momentum compounds.";
+    } else if (calOver && proteinShort) {
+      alignmentStatus = "off";
+      alignmentMessage = "Stop. You're eating more calories than you need AND less protein than you need. This is the exact combo that burns muscle and stalls fat loss. Every day you stay here is a day the mirror lies to you. Mid-May is 4 weeks out. The version of you at 240 with visible definition is watching. Don't make him wait longer because of a drink you didn't need or a meal you didn't log. Fix it this week. Starting with the next meal.";
+    } else if (calOver) {
+      alignmentStatus = "drift";
+      alignmentMessage = `You're ${avgCal - activeGoal.cal} cal over your target on average. Protein is solid — the leak is calories. But the calories are the leak, and leaks sink goals. It's almost certainly weekend drift, alcohol, or "just one more" snacks. You know exactly where the problem is. The scale doesn't care about your excuses. Own this week.`;
+    } else if (proteinShort) {
+      alignmentStatus = "drift";
+      alignmentMessage = `You're short ${activeGoal.protein - avgProtein}g of protein daily. At a deficit with low protein, you lose muscle — which means the body underneath won't look the way you want when you hit 240. You built 108 lbs of muscle. Don't waste it by skipping a shake. Add protein to every meal this week, non-negotiable.`;
+    }
+  }
+
+  const statusStyles = {
+    aligned: "bg-emerald-50 border-emerald-200 text-emerald-900",
+    drift: "bg-amber-50 border-amber-200 text-amber-900",
+    off: "bg-red-50 border-red-200 text-red-900",
+    early: "bg-stone-50 border-stone-200 text-stone-900",
+    nodata: "bg-stone-50 border-stone-200 text-stone-600",
+  };
+
+  const statusLabels = { aligned: "Aligned ✓", drift: "Slight Drift", off: "Off Track", early: "Early Days", nodata: "No Data" };
+
+  return (
+    <div className="space-y-4">
+      <div className={`rounded-2xl p-5 border-2 ${statusStyles[alignmentStatus]}`}>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider opacity-70">Eating vs Goal</p>
+          <span className="text-xs font-bold uppercase tracking-wide">{statusLabels[alignmentStatus]}</span>
+        </div>
+        <p className="text-sm leading-relaxed">{alignmentMessage}</p>
+        {loggedDays.length > 0 && <p className="text-xs mt-3 opacity-70">{loggedDays.length}-day avg: {avgCal} cal · {avgProtein}g protein</p>}
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-xs font-semibold uppercase tracking-wider text-stone-500">This Week's Commitment</p>
+          {!editingCommitment && displayCommitment && (
+            <button onClick={() => { setEditingCommitment(true); setCommitmentDraft(displayCommitment); }} className="text-xs text-stone-500 hover:text-stone-700 underline">Edit</button>
+          )}
+        </div>
+        {editingCommitment || !displayCommitment ? (
+          <div>
+            <textarea placeholder="This week I commit to… (e.g., Hit 198g protein every day. Max 2 drinks on Saturday. Prep Sunday at 2pm.)" value={commitmentDraft} onChange={(e) => setCommitmentDraft(e.target.value)} rows={3} className="w-full px-3 py-2 rounded-lg border border-stone-200 text-sm focus:outline-none focus:border-stone-400 resize-none mb-2" />
+            <button onClick={() => { saveCommitment(commitmentDraft.trim()); setEditingCommitment(false); }} disabled={!commitmentDraft.trim()} className="w-full bg-stone-900 text-white rounded-lg py-2 text-sm font-medium disabled:bg-stone-300 hover:bg-stone-800">Lock It In</button>
+          </div>
+        ) : (
+          <p className="text-base text-stone-900 leading-relaxed font-medium">{displayCommitment}</p>
+        )}
+      </div>
+
+      <div className="bg-stone-900 rounded-2xl p-5 text-white relative">
+        <div className="flex items-start justify-between mb-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-stone-400">The Goal</p>
+          <button onClick={onEditGoal} className="text-xs text-stone-400 hover:text-white underline">Edit</button>
+        </div>
+        <p className="text-2xl font-bold mb-1">{goalSettings.targetWeight} lbs by {goalSettings.targetDate}</p>
+        <p className="text-sm text-stone-300">{goalSettings.startWeight && Number(goalSettings.startWeight) > Number(goalSettings.targetWeight) ? `${Number(goalSettings.startWeight) - Number(goalSettings.targetWeight)} lbs down · ` : ""}{goalSettings.lbsPerWeek} lbs per week · InBody scan {goalSettings.scanDate}</p>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-3">The Vision</p>
+        <p className="text-base text-stone-900 leading-relaxed mb-3">{goalSettings.vision}</p>
+        <p className="text-sm text-stone-600 leading-relaxed">{goalSettings.visionSubtext}</p>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-3">Why It Matters</p>
+        <div className="space-y-2 text-sm text-stone-700">
+          <p>• Confidence, dating, showing up fully in life</p>
+          <p>• Attracting abundance: love, wealth, opportunity, meaningful connections</p>
+          <p>• Breaking old cycles and patterns that no longer serve you</p>
+          <p>• Building a life that feels as good on the inside as it looks on the outside</p>
+        </div>
+      </div>
+
+      <div className="bg-emerald-50 rounded-2xl p-5 border border-emerald-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-emerald-700 mb-2">Remember</p>
+        <p className="text-sm text-stone-900 leading-relaxed">Your muscle base is already built — 108 lbs of it. You're not building from scratch. You're uncovering what you've already earned.</p>
+      </div>
+
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
+        <p className="text-xs font-semibold uppercase tracking-wider text-stone-500 mb-3">Non-Negotiables</p>
+        <div className="space-y-2 text-sm text-stone-700">
+          <p>• 198g protein daily · protect the muscle</p>
+          <p>• Under 2,100 calories · create the deficit</p>
+          <p>• Lift 3x/week · progressive overload every session</p>
+          <p>• Orangetheory 2x/week · booked in advance</p>
+          <p>• Weekend drift is the enemy · own Friday through Sunday</p>
+        </div>
+        <div className="mt-4 pt-4 border-t border-stone-200">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-stone-500 mb-1.5">The Weekend Truth</p>
+          <p className="text-sm text-stone-700 leading-relaxed">This is where the 10 lbs lives. 5 disciplined weekdays + 2 loose weekend days = flat week. The guys who hit their goals don't train harder — they stop undoing Monday through Friday every Friday night. Own the weekend and the rest takes care of itself.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GoalView({ goalIdx, setGoalIdx, weeklyData, activeGoal }) {
+  const loggedDays = weeklyData.filter((d) => d.hasData);
+  const avgCal = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.cal, 0) / loggedDays.length) : 0;
+  const avgProtein = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.protein, 0) / loggedDays.length) : 0;
+
+  const calStatus = loggedDays.length === 0 ? "nodata" : avgCal > activeGoal.cal + 100 ? "over" : avgCal < activeGoal.cal - 300 ? "under" : "aligned";
+  const proteinStatus = loggedDays.length === 0 ? "nodata" : avgProtein >= activeGoal.protein - 10 ? "aligned" : avgProtein >= activeGoal.protein - 30 ? "under" : "way-under";
+
+  const statusColor = (s) => {
+    if (s === "aligned") return "text-emerald-600";
+    if (s === "over" || s === "way-under") return "text-red-600";
+    if (s === "under") return "text-amber-600";
+    return "text-stone-400";
+  };
+
+  const statusLabel = (s, diff, unit) => {
+    if (s === "nodata") return "No data yet";
+    if (s === "aligned") return "On target ✓";
+    if (s === "over") return `${Math.abs(diff)} ${unit} over`;
+    if (s === "under") return `${Math.abs(diff)} ${unit} under`;
+    if (s === "way-under") return `${Math.abs(diff)} ${unit} short`;
+    return "";
+  };
+
+  return (
+    <div>
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">Current Goal</h2>
+        <div className="space-y-2">
+          {GOAL_PRESETS.map((goal, idx) => {
+            const isActive = idx === goalIdx;
+            return (
+              <button key={goal.id} onClick={() => setGoalIdx(idx)} className={`w-full rounded-xl p-4 border-2 text-left transition-all ${isActive ? "bg-stone-900 border-stone-900 text-white" : "bg-white border-stone-200 hover:border-stone-400"}`}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`font-semibold text-sm ${isActive ? "text-white" : "text-stone-900"}`}>{goal.name}</span>
+                  {isActive && <span className="text-xs bg-white/20 text-white px-2 py-0.5 rounded-full">Active</span>}
+                </div>
+                <p className={`text-xs mb-2 ${isActive ? "text-stone-300" : "text-stone-500"}`}>{goal.subtitle}</p>
+                <div className={`text-xs ${isActive ? "text-stone-200" : "text-stone-600"}`}>{goal.cal} cal · {goal.protein}P · {goal.carbs}C · {goal.fat}F</div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="mb-6">
+        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-3">7-Day Alignment</h2>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200">
+          {loggedDays.length === 0 ? (
+            <p className="text-sm text-stone-400 italic text-center py-4">Log meals this week to see alignment</p>
+          ) : (
+            <>
+              <p className="text-xs text-stone-500 mb-3">Based on {loggedDays.length} logged {loggedDays.length === 1 ? "day" : "days"}</p>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+                  <div><p className="text-sm font-medium text-stone-900">Calories</p><p className="text-xs text-stone-500">Avg {avgCal} · Target {activeGoal.cal}</p></div>
+                  <span className={`text-sm font-semibold ${statusColor(calStatus)}`}>{statusLabel(calStatus, avgCal - activeGoal.cal, "cal")}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div><p className="text-sm font-medium text-stone-900">Protein</p><p className="text-xs text-stone-500">Avg {avgProtein}g · Target {activeGoal.protein}g</p></div>
+                  <span className={`text-sm font-semibold ${statusColor(proteinStatus)}`}>{statusLabel(proteinStatus, avgProtein - activeGoal.protein, "g")}</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {loggedDays.length >= 3 && (
+        <div className="bg-stone-900 rounded-2xl p-4 text-white">
+          <h3 className="text-sm font-semibold mb-2 uppercase tracking-wide">Coach Read</h3>
+          <p className="text-sm text-stone-200 leading-relaxed">
+            {calStatus === "over" && proteinStatus === "aligned" && <>You're eating above target. Protein is solid — the leak is calories. Cut 150-200 from evening snacks or drinks.</>}
+            {calStatus === "over" && proteinStatus !== "aligned" && <>Calories up, protein down — that's a dangerous combo for muscle retention. Replace carb-heavy foods with lean protein.</>}
+            {calStatus === "aligned" && proteinStatus === "aligned" && <>Dialed in. Keep this consistency and the weight will move.</>}
+            {calStatus === "aligned" && proteinStatus !== "aligned" && <>Calories on point but protein short. Add a second shake or extra chicken at dinner.</>}
+            {calStatus === "under" && <>Eating below target. Good for fat loss, but watch energy and recovery. Don't under-eat yourself into burnout.</>}
+            {calStatus === "nodata" && <>Log consistently and I'll read your pattern.</>}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WeekView({ weeklyData, activeGoal }) {
+  const loggedDays = weeklyData.filter((d) => d.hasData);
+  const avgCal = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.cal, 0) / loggedDays.length) : 0;
+  const avgProtein = loggedDays.length > 0 ? Math.round(loggedDays.reduce((s, d) => s + d.protein, 0) / loggedDays.length) : 0;
+  const proteinHitCount = loggedDays.filter((d) => d.protein >= activeGoal.protein).length;
+  const calUnderCount = loggedDays.filter((d) => d.cal <= activeGoal.cal && d.cal > 0).length;
+  const maxCal = Math.max(...weeklyData.map((d) => d.cal), activeGoal.cal);
+
+  return (
+    <div>
+      <div className="grid grid-cols-2 gap-3 mb-6">
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200"><p className="text-xs text-stone-500 mb-1">Avg Calories</p><p className="text-2xl font-bold text-stone-900">{avgCal}</p><p className="text-xs text-stone-400 mt-1">Target: {activeGoal.cal}</p></div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200"><p className="text-xs text-stone-500 mb-1">Avg Protein</p><p className="text-2xl font-bold text-stone-900">{avgProtein}g</p><p className="text-xs text-stone-400 mt-1">Target: {activeGoal.protein}g</p></div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200"><p className="text-xs text-stone-500 mb-1">Hit {activeGoal.protein}g Protein</p><p className="text-2xl font-bold text-emerald-600">{proteinHitCount}/{loggedDays.length}</p><p className="text-xs text-stone-400 mt-1">Days on target</p></div>
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200"><p className="text-xs text-stone-500 mb-1">Under {activeGoal.cal}</p><p className="text-2xl font-bold text-emerald-600">{calUnderCount}/{loggedDays.length}</p><p className="text-xs text-stone-400 mt-1">Days under cal cap</p></div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 mb-6">
+        <h2 className="text-sm font-semibold text-stone-700 uppercase tracking-wide mb-4">Last 7 Days</h2>
+        <div className="space-y-3">
+          {weeklyData.map((day) => {
+            const calPct = (day.cal / maxCal) * 100;
+            const proteinPct = Math.min((day.protein / activeGoal.protein) * 100, 100);
+            const calOver = day.cal > activeGoal.cal;
+            const proteinHit = day.protein >= activeGoal.protein;
+            return (
+              <div key={day.date}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className={`text-sm font-medium ${day.isToday ? "text-stone-900" : "text-stone-600"}`}>
+                    {day.dayName} {day.dayNum}{day.isToday && <span className="ml-1 text-xs text-stone-400">(today)</span>}
+                  </span>
+                  {day.hasData ? (
+                    <span className="text-xs text-stone-500">
+                      <span className={calOver ? "text-red-600 font-medium" : ""}>{Math.round(day.cal)}</span>{" cal · "}
+                      <span className={proteinHit ? "text-emerald-600 font-medium" : ""}>{Math.round(day.protein)}g</span>
+                    </span>
+                  ) : (
+                    <span className="text-xs text-stone-400 italic">No data</span>
+                  )}
+                </div>
+                {day.hasData && (
+                  <div className="space-y-1">
+                    <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${calOver ? "bg-red-500" : "bg-stone-900"}`} style={{ width: `${calPct}%` }} /></div>
+                    <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${proteinHit ? "bg-emerald-500" : "bg-stone-400"}`} style={{ width: `${proteinPct}%` }} /></div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl p-4 shadow-sm border border-stone-200 text-xs text-stone-500">
+        <div className="flex items-center gap-2 mb-2"><div className="w-3 h-1.5 bg-stone-900 rounded-full"></div><span>Calories (red if over {activeGoal.cal})</span></div>
+        <div className="flex items-center gap-2"><div className="w-3 h-1.5 bg-emerald-500 rounded-full"></div><span>Protein (green if {activeGoal.protein}g+ hit)</span></div>
+      </div>
+    </div>
+  );
+}
+
+const container = document.getElementById("root");
+const root = ReactDOM.createRoot(container);
+root.render(React.createElement(MacroTracker));
+  </script>
+</body>
+</html>
