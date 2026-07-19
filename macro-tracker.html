@@ -10,9 +10,28 @@
   <title>Macro Tracker</title>
 
   <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@8.0.4/babel.min.js"></script>
+
+  <!-- FIX (2026-07-19): Babel Standalone auto-updated to v8 on the CDN, which
+       defaults JSX to the "automatic" runtime and emits `import ... from
+       "react/jsx-runtime"` — ES-module imports that can't run in a classic
+       <script>, so the app hung at "Loading Macro Tracker...".
+       Two-part fix: (1) all CDN libraries are now pinned to exact versions
+       above so a future release can't silently break this again;
+       (2) the block below forces Babel back to the classic runtime
+       (React.createElement). The `typeof Babel` guard means this can never
+       throw its own error even if the Babel script fails to load. -->
+  <script>
+    (function () {
+      if (typeof Babel === 'undefined' || !Babel.availablePresets) return;
+      var reactPreset = Babel.availablePresets['react'];
+      Babel.registerPreset('react', function (api, opts) {
+        return reactPreset(api, Object.assign({ runtime: 'classic' }, opts || {}));
+      });
+    })();
+  </script>
 
   <style>
     html, body { margin: 0; padding: 0; background: #fafaf9; -webkit-tap-highlight-color: transparent; }
