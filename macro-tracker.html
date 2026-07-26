@@ -1074,6 +1074,9 @@ function MacroTracker() {
   // Personal single-user app: need to see the existing inbox folder Miguel already created.
   // drive.file alone cannot see folders it did not create, and would spawn a duplicate.
   const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+  // Must match Authorized redirect URI on the OAuth Web client exactly.
+  const DRIVE_REDIRECT_URI = "https://mlxexp.github.io/MacrosTracker/macro-tracker.html";
+  const DRIVE_OAUTH_STATE = "macros-drive-backup";
 
   const buildBackupPayload = async () => {
     const payload = {
@@ -1109,6 +1112,44 @@ function MacroTracker() {
     window.storage.set("drive-backup-config", JSON.stringify({ clientId: cleaned, folderName: DRIVE_FOLDER_NAME })).catch(() => {});
   };
 
+  const parseDriveOAuthHash = () => {
+    const raw = (window.location.hash || "").replace(/^#/, "");
+    if (!raw || (raw.indexOf("access_token=") < 0 && raw.indexOf("error=") < 0)) return null;
+    const params = new URLSearchParams(raw);
+    return {
+      access_token: params.get("access_token"),
+      expires_in: params.get("expires_in"),
+      token_type: params.get("token_type") || "Bearer",
+      state: params.get("state"),
+      error: params.get("error"),
+      error_description: params.get("error_description"),
+    };
+  };
+
+  const clearDriveOAuthHash = () => {
+    if (!window.location.hash) return;
+    try {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    } catch (e) {}
+  };
+
+  const beginDriveRedirectAuth = (clientId) => {
+    try { localStorage.setItem("drive-backup-pending", "1"); } catch (e) {}
+    const already = (() => {
+      try { return localStorage.getItem("drive-backup-authorized") === "1"; } catch (e) { return false; }
+    })();
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: DRIVE_REDIRECT_URI,
+      response_type: "token",
+      scope: DRIVE_SCOPE,
+      include_granted_scopes: "true",
+      state: DRIVE_OAUTH_STATE,
+    });
+    if (!already) params.set("prompt", "consent");
+    window.location.assign(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+  };
+
   const ensureGapiDrive = () => new Promise((resolve, reject) => {
     if (typeof gapi === "undefined") {
       reject(new Error("Google API not loaded yet — wait a second and try again."));
@@ -1124,32 +1165,6 @@ function MacroTracker() {
     });
   });
 
-  const requestDriveToken = (clientId) => new Promise((resolve, reject) => {
-    if (typeof google === "undefined" || !google.accounts || !google.accounts.oauth2) {
-      reject(new Error("Google Identity not loaded yet — wait a second and try again."));
-      return;
-    }
-    const tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: DRIVE_SCOPE,
-      callback: (resp) => {
-        if (resp && resp.error) {
-          reject(new Error(resp.error_description || resp.error));
-          return;
-        }
-        resolve(resp);
-      },
-      error_callback: (err) => {
-        reject(new Error((err && (err.message || err.type)) || "Google sign-in was cancelled or blocked."));
-      },
-    });
-    // Must run inside the click handler (iOS Safari popup rules).
-    const already = (() => {
-      try { return localStorage.getItem("drive-backup-authorized") === "1"; } catch (e) { return false; }
-    })();
-    tokenClient.requestAccessToken({ prompt: already ? "" : "consent" });
-  });
-
   const findOrCreateInboxFolder = async () => {
     const list = await gapi.client.drive.files.list({
       q: `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
@@ -1159,7 +1174,6 @@ function MacroTracker() {
     });
     const files = (list.result && list.result.files) || [];
     if (files.length > 0) return files[0].id;
-    // drive.file scope: create the inbox folder via this app so later uploads can use it.
     const created = await gapi.client.drive.files.create({
       resource: {
         name: DRIVE_FOLDER_NAME,
@@ -1171,7 +1185,7 @@ function MacroTracker() {
   };
 
   const uploadBackupToDrive = async (payload, folderId) => {
-    const filename = `macro-tracker-backup-${today}.json`;
+    const filename = `macro-tracker-backup-${formatLocalDate(new Date())}.json`;
     const metadata = {
       name: filename,
       parents: [folderId],
@@ -1202,23 +1216,14 @@ function MacroTracker() {
     return res.json();
   };
 
-  const backupToDrive = async () => {
+  const finishDriveBackupWithToken = async (tokenResp) => {
     if (driveBusy) return;
-    const clientId = String(driveClientId || "").trim();
-    if (!clientId) {
-      setDriveSetupOpen(true);
-      setDriveStatus({ ok: false, msg: "Paste your Google OAuth Client ID once (setup below), then try again." });
-      return;
-    }
     setDriveBusy(true);
-    setDriveStatus({ ok: true, msg: "Preparing backup…" });
+    setDriveStatus({ ok: true, msg: "Uploading to Drive / iPhone-to-vault…" });
     try {
       await ensureGapiDrive();
-      setDriveStatus({ ok: true, msg: "Sign in to Google if prompted…" });
-      const tokenResp = await requestDriveToken(clientId);
       gapi.client.setToken(tokenResp);
       try { localStorage.setItem("drive-backup-authorized", "1"); } catch (e) {}
-      setDriveStatus({ ok: true, msg: "Uploading to Drive / iPhone-to-vault…" });
       const payload = await buildBackupPayload();
       const folderId = await findOrCreateInboxFolder();
       const uploaded = await uploadBackupToDrive(payload, folderId);
@@ -1229,10 +1234,45 @@ function MacroTracker() {
     } catch (err) {
       setDriveStatus({ ok: false, msg: (err && err.message) || "Drive backup failed." });
     } finally {
+      try { localStorage.removeItem("drive-backup-pending"); } catch (e) {}
       setDriveBusy(false);
-      setTimeout(() => setDriveStatus(null), 8000);
+      setTimeout(() => setDriveStatus(null), 10000);
     }
   };
+
+  // iOS (Safari + home-screen) blocks Google's popup — use same-window redirect instead.
+  const backupToDrive = () => {
+    if (driveBusy) return;
+    const clientId = String(driveClientId || "").trim();
+    if (!clientId) {
+      setDriveSetupOpen(true);
+      setDriveStatus({ ok: false, msg: "Paste your Google OAuth Client ID once (setup below), then try again." });
+      return;
+    }
+    setDriveStatus({ ok: true, msg: "Opening Google sign-in…" });
+    beginDriveRedirectAuth(clientId);
+  };
+
+  // After Google redirect: URL hash has access_token — finish the upload.
+  useEffect(() => {
+    if (loading) return;
+    const oauth = parseDriveOAuthHash();
+    if (!oauth) return;
+    clearDriveOAuthHash();
+    let pending = false;
+    try { pending = localStorage.getItem("drive-backup-pending") === "1"; } catch (e) {}
+    if (oauth.error) {
+      try { localStorage.removeItem("drive-backup-pending"); } catch (e) {}
+      setDriveStatus({ ok: false, msg: oauth.error_description || oauth.error || "Google sign-in failed." });
+      return;
+    }
+    if (!pending || !oauth.access_token || oauth.state !== DRIVE_OAUTH_STATE) return;
+    finishDriveBackupWithToken({
+      access_token: oauth.access_token,
+      expires_in: oauth.expires_in,
+      token_type: oauth.token_type,
+    });
+  }, [loading]);
 
   const exportJSON = async () => {
     try {
@@ -1823,7 +1863,9 @@ function MacroTracker() {
                   <p className="text-[11px] text-stone-600 mb-2">
                     One-time: create a Google Cloud <b>OAuth Web Client ID</b> with JavaScript origin
                     <code className="mx-1 text-[10px] bg-white px-1 rounded border">https://mlxexp.github.io</code>
-                    and paste it here. Details in the vault note <b>Macro Tracker — Phone Export → Vault</b>.
+                    and Authorized redirect URI
+                    <code className="mx-1 text-[10px] bg-white px-1 rounded border">https://mlxexp.github.io/MacrosTracker/macro-tracker.html</code>
+                    then paste the Client ID here. Backup opens Google in this window (no popup).
                   </p>
                   <input
                     type="text"
