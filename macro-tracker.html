@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- vault-provenance: authored artifact - no build script. This file IS the deliverable: open it, do not regenerate or rebuild it. -->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -13,6 +14,8 @@
   <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone@8.0.4/babel.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="https://apis.google.com/js/api.js" async defer></script>
 
   <!-- FIX (2026-07-19): Babel Standalone auto-updated to v8 on the CDN, which
        defaults JSX to the "automatic" runtime and emits `import ... from
@@ -194,18 +197,22 @@ function MacroTracker() {
   const [weightInputDate, setWeightInputDate] = useState(() => formatLocalDate(new Date()));
   const [weightRange, setWeightRange] = useState("3m"); // "all" | "12m" | "6m" | "3m" | "1m"
   const [jsonRestoreStatus, setJsonRestoreStatus] = useState(null); // null | {ok:true, counts} | {ok:false, msg}
+  const [driveClientId, setDriveClientId] = useState("");
+  const [driveSetupOpen, setDriveSetupOpen] = useState(false);
+  const [driveStatus, setDriveStatus] = useState(null); // null | {ok, msg}
+  const [driveBusy, setDriveBusy] = useState(false);
   const [selectedDate, setSelectedDate] = useState(() => formatLocalDate(new Date()));
   const [showMantra, setShowMantra] = useState(true);
   const [weeklyCommitment, setWeeklyCommitment] = useState("");
   const [commitmentWeekStart, setCommitmentWeekStart] = useState("");
   const [streakCount, setStreakCount] = useState(0);
   const [goalSettings, setGoalSettings] = useState({
-    targetWeight: "240",
-    targetDate: "mid-May",
-    startWeight: "250",
+    targetWeight: "235",
+    targetDate: "early Sep 2026",
+    startWeight: "241.4",
     lbsPerWeek: "1-1.2",
-    scanDate: "May 6",
-    vision: "The most magnetic, attractive version of yourself. 240 lbs with visible muscle definition.",
+    scanDate: "TBD near 235",
+    vision: "Cut to 235 — sustainable but fast (1–1.2 lb/week). Magnetic physique; protect the muscle with protein.",
     visionSubtext: "The body that shows up differently — in the gym, on dates, at work, in the mirror.",
   });
   const [showGoalEditModal, setShowGoalEditModal] = useState(false);
@@ -332,6 +339,13 @@ function MacroTracker() {
         const wlResult = await window.storage.get("weight-logs");
         if (wlResult && wlResult.value) {
           setWeightLogs(JSON.parse(wlResult.value));
+        }
+      } catch (err) {}
+      try {
+        const driveCfg = await window.storage.get("drive-backup-config");
+        if (driveCfg && driveCfg.value) {
+          const cfg = JSON.parse(driveCfg.value);
+          if (cfg && cfg.clientId) setDriveClientId(String(cfg.clientId));
         }
       } catch (err) {}
       setLoading(false);
@@ -1056,33 +1070,173 @@ function MacroTracker() {
     "goal-selection",
   ];
 
+  const DRIVE_FOLDER_NAME = "iPhone-to-vault";
+  // Personal single-user app: need to see the existing inbox folder Miguel already created.
+  // drive.file alone cannot see folders it did not create, and would spawn a duplicate.
+  const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive";
+
+  const buildBackupPayload = async () => {
+    const payload = {
+      app: "macro-tracker",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: {},
+      macros: {},
+    };
+    for (const key of BACKUP_KEYS_SINGLE) {
+      try {
+        const r = await window.storage.get(key);
+        if (r && r.value !== undefined) payload.data[key] = r.value;
+      } catch (e) {}
+    }
+    try {
+      const listResult = await window.storage.list("macros:");
+      if (listResult && listResult.keys) {
+        for (const key of listResult.keys) {
+          try {
+            const r = await window.storage.get(key);
+            if (r && r.value !== undefined) payload.macros[key] = r.value;
+          } catch (e) {}
+        }
+      }
+    } catch (e) {}
+    return payload;
+  };
+
+  const saveDriveConfig = (clientId) => {
+    const cleaned = String(clientId || "").trim();
+    setDriveClientId(cleaned);
+    window.storage.set("drive-backup-config", JSON.stringify({ clientId: cleaned, folderName: DRIVE_FOLDER_NAME })).catch(() => {});
+  };
+
+  const ensureGapiDrive = () => new Promise((resolve, reject) => {
+    if (typeof gapi === "undefined") {
+      reject(new Error("Google API not loaded yet — wait a second and try again."));
+      return;
+    }
+    gapi.load("client", async () => {
+      try {
+        await gapi.client.init({ discoveryDocs: ["https://www.googleapis.com/discovery/v1/apis/drive/v3/rest"] });
+        resolve();
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+
+  const requestDriveToken = (clientId) => new Promise((resolve, reject) => {
+    if (typeof google === "undefined" || !google.accounts || !google.accounts.oauth2) {
+      reject(new Error("Google Identity not loaded yet — wait a second and try again."));
+      return;
+    }
+    const tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: DRIVE_SCOPE,
+      callback: (resp) => {
+        if (resp && resp.error) {
+          reject(new Error(resp.error_description || resp.error));
+          return;
+        }
+        resolve(resp);
+      },
+      error_callback: (err) => {
+        reject(new Error((err && (err.message || err.type)) || "Google sign-in was cancelled or blocked."));
+      },
+    });
+    // Must run inside the click handler (iOS Safari popup rules).
+    const already = (() => {
+      try { return localStorage.getItem("drive-backup-authorized") === "1"; } catch (e) { return false; }
+    })();
+    tokenClient.requestAccessToken({ prompt: already ? "" : "consent" });
+  });
+
+  const findOrCreateInboxFolder = async () => {
+    const list = await gapi.client.drive.files.list({
+      q: `name='${DRIVE_FOLDER_NAME}' and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      spaces: "drive",
+      fields: "files(id, name)",
+      pageSize: 10,
+    });
+    const files = (list.result && list.result.files) || [];
+    if (files.length > 0) return files[0].id;
+    // drive.file scope: create the inbox folder via this app so later uploads can use it.
+    const created = await gapi.client.drive.files.create({
+      resource: {
+        name: DRIVE_FOLDER_NAME,
+        mimeType: "application/vnd.google-apps.folder",
+      },
+      fields: "id, name",
+    });
+    return created.result.id;
+  };
+
+  const uploadBackupToDrive = async (payload, folderId) => {
+    const filename = `macro-tracker-backup-${today}.json`;
+    const metadata = {
+      name: filename,
+      parents: [folderId],
+      mimeType: "application/json",
+    };
+    const boundary = "macros_backup_boundary";
+    const body =
+      `--${boundary}\r\n` +
+      `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+      `${JSON.stringify(metadata)}\r\n` +
+      `--${boundary}\r\n` +
+      `Content-Type: application/json\r\n\r\n` +
+      `${JSON.stringify(payload, null, 2)}\r\n` +
+      `--${boundary}--`;
+    const token = gapi.client.getToken() && gapi.client.getToken().access_token;
+    const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Drive upload failed (${res.status}): ${text.slice(0, 180)}`);
+    }
+    return res.json();
+  };
+
+  const backupToDrive = async () => {
+    if (driveBusy) return;
+    const clientId = String(driveClientId || "").trim();
+    if (!clientId) {
+      setDriveSetupOpen(true);
+      setDriveStatus({ ok: false, msg: "Paste your Google OAuth Client ID once (setup below), then try again." });
+      return;
+    }
+    setDriveBusy(true);
+    setDriveStatus({ ok: true, msg: "Preparing backup…" });
+    try {
+      await ensureGapiDrive();
+      setDriveStatus({ ok: true, msg: "Sign in to Google if prompted…" });
+      const tokenResp = await requestDriveToken(clientId);
+      gapi.client.setToken(tokenResp);
+      try { localStorage.setItem("drive-backup-authorized", "1"); } catch (e) {}
+      setDriveStatus({ ok: true, msg: "Uploading to Drive / iPhone-to-vault…" });
+      const payload = await buildBackupPayload();
+      const folderId = await findOrCreateInboxFolder();
+      const uploaded = await uploadBackupToDrive(payload, folderId);
+      setDriveStatus({
+        ok: true,
+        msg: `Saved ${uploaded.name || "backup"} to Google Drive / ${DRIVE_FOLDER_NAME}. On PC run pull_tracker_export.py.`,
+      });
+    } catch (err) {
+      setDriveStatus({ ok: false, msg: (err && err.message) || "Drive backup failed." });
+    } finally {
+      setDriveBusy(false);
+      setTimeout(() => setDriveStatus(null), 8000);
+    }
+  };
+
   const exportJSON = async () => {
     try {
-      const payload = {
-        app: "macro-tracker",
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        data: {},
-        macros: {},
-      };
-      for (const key of BACKUP_KEYS_SINGLE) {
-        try {
-          const r = await window.storage.get(key);
-          if (r && r.value !== undefined) payload.data[key] = r.value;
-        } catch (e) {}
-      }
-      try {
-        const listResult = await window.storage.list("macros:");
-        if (listResult && listResult.keys) {
-          for (const key of listResult.keys) {
-            try {
-              const r = await window.storage.get(key);
-              if (r && r.value !== undefined) payload.macros[key] = r.value;
-            } catch (e) {}
-          }
-        }
-      } catch (e) {}
-
+      const payload = await buildBackupPayload();
       const json = JSON.stringify(payload, null, 2);
       const blob = new Blob([json], { type: "application/json" });
       const url = URL.createObjectURL(blob);
@@ -1623,7 +1777,16 @@ function MacroTracker() {
             {/* Discreet JSON backup / restore */}
             <div className="mt-8 pt-4 border-t border-stone-100">
               <p className="text-[10px] text-stone-400 uppercase tracking-wider mb-2 text-center">Data</p>
-              <div className="flex items-center justify-center gap-4">
+              <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
+                <button
+                  onClick={backupToDrive}
+                  disabled={driveBusy}
+                  className="text-[11px] text-stone-700 hover:text-stone-900 underline underline-offset-2 disabled:opacity-50 font-medium"
+                  title="Upload a full JSON backup straight to Google Drive / iPhone-to-vault"
+                >
+                  {driveBusy ? "Backing up…" : "Backup to Drive"}
+                </button>
+                <span className="text-stone-300">·</span>
                 <button
                   onClick={exportJSON}
                   className="text-[11px] text-stone-400 hover:text-stone-700 underline underline-offset-2"
@@ -1646,7 +1809,48 @@ function MacroTracker() {
                 >
                   Restore (JSON)
                 </button>
+                <span className="text-stone-300">·</span>
+                <button
+                  onClick={() => setDriveSetupOpen(!driveSetupOpen)}
+                  className="text-[11px] text-stone-400 hover:text-stone-700 underline underline-offset-2"
+                  title="One-time Google OAuth Client ID for Backup to Drive"
+                >
+                  Drive setup
+                </button>
               </div>
+              {driveSetupOpen && (
+                <div className="mt-3 bg-stone-50 border border-stone-200 rounded-xl p-3 text-left">
+                  <p className="text-[11px] text-stone-600 mb-2">
+                    One-time: create a Google Cloud <b>OAuth Web Client ID</b> with JavaScript origin
+                    <code className="mx-1 text-[10px] bg-white px-1 rounded border">https://mlxexp.github.io</code>
+                    and paste it here. Details in the vault note <b>Macro Tracker — Phone Export → Vault</b>.
+                  </p>
+                  <input
+                    type="text"
+                    value={driveClientId}
+                    onChange={(e) => setDriveClientId(e.target.value)}
+                    placeholder="123456789-abc.apps.googleusercontent.com"
+                    className="w-full text-xs border border-stone-200 rounded-lg px-2 py-2 mb-2"
+                  />
+                  <button
+                    onClick={() => { saveDriveConfig(driveClientId); setDriveSetupOpen(false); setDriveStatus({ ok: true, msg: "Client ID saved on this phone." }); setTimeout(() => setDriveStatus(null), 4000); }}
+                    className="w-full bg-stone-900 text-white rounded-lg py-2 text-xs font-medium"
+                  >
+                    Save Client ID
+                  </button>
+                </div>
+              )}
+              {driveStatus && (
+                <div className={`mt-3 border rounded-xl p-3 ${driveStatus.ok ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"}`}>
+                  <p className={`text-xs ${driveStatus.ok ? "text-emerald-800" : "text-red-800"}`}>{driveStatus.msg}</p>
+                </div>
+              )}
+              {jsonRestoreStatus && (
+                <div className={`mt-3 ${jsonRestoreStatus.ok ? "bg-emerald-50 border-emerald-200" : "bg-red-50 border-red-200"} border rounded-xl p-3`}>
+                  <p className={`text-xs font-semibold ${jsonRestoreStatus.ok ? "text-emerald-900" : "text-red-900"}`}>{jsonRestoreStatus.ok ? "Restore complete" : "Restore failed"}</p>
+                  <p className={`text-xs ${jsonRestoreStatus.ok ? "text-emerald-700" : "text-red-700"} mt-1`}>{jsonRestoreStatus.msg}</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -2656,13 +2860,13 @@ function WhyView({ weeklyData, activeGoal, weeklyCommitment, saveCommitment, com
       alignmentMessage = "You're eating like the man you're building. Keep executing — momentum compounds.";
     } else if (calOver && proteinShort) {
       alignmentStatus = "off";
-      alignmentMessage = "Stop. You're eating more calories than you need AND less protein than you need. This is the exact combo that burns muscle and stalls fat loss. Every day you stay here is a day the mirror lies to you. Mid-May is 4 weeks out. The version of you at 240 with visible definition is watching. Don't make him wait longer because of a drink you didn't need or a meal you didn't log. Fix it this week. Starting with the next meal.";
+      alignmentMessage = "Stop. You're eating more calories than you need AND less protein than you need. This is the exact combo that burns muscle and stalls fat loss. Every day you stay here is a day the mirror lies to you. You closed the May cut at 241.4 — don't undo that with the cal+low-protein combo. Fix it this week. Starting with the next meal.";
     } else if (calOver) {
       alignmentStatus = "drift";
       alignmentMessage = `You're ${avgCal - activeGoal.cal} cal over your target on average. Protein is solid — the leak is calories. But the calories are the leak, and leaks sink goals. It's almost certainly weekend drift, alcohol, or "just one more" snacks. You know exactly where the problem is. The scale doesn't care about your excuses. Own this week.`;
     } else if (proteinShort) {
       alignmentStatus = "drift";
-      alignmentMessage = `You're short ${activeGoal.protein - avgProtein}g of protein daily. At a deficit with low protein, you lose muscle — which means the body underneath won't look the way you want when you hit 240. You built 108 lbs of muscle. Don't waste it by skipping a shake. Add protein to every meal this week, non-negotiable.`;
+      alignmentMessage = `You're short ${activeGoal.protein - avgProtein}g of protein daily. At a deficit with low protein, you lose muscle — which means the body underneath won't look the way you want when the next goal is set. You built 108 lbs of muscle. Don't waste it by skipping a shake. Add protein to every meal this week, non-negotiable.`;
     }
   }
 
@@ -2710,7 +2914,7 @@ function WhyView({ weeklyData, activeGoal, weeklyCommitment, saveCommitment, com
           <button onClick={onEditGoal} className="text-xs text-stone-400 hover:text-white underline">Edit</button>
         </div>
         <p className="text-2xl font-bold mb-1">{goalSettings.targetWeight} lbs by {goalSettings.targetDate}</p>
-        <p className="text-sm text-stone-300">{goalSettings.startWeight && Number(goalSettings.startWeight) > Number(goalSettings.targetWeight) ? `${Number(goalSettings.startWeight) - Number(goalSettings.targetWeight)} lbs down · ` : ""}{goalSettings.lbsPerWeek} lbs per week · InBody scan {goalSettings.scanDate}</p>
+        <p className="text-sm text-stone-300">{goalSettings.startWeight && !isNaN(Number(goalSettings.startWeight)) && !isNaN(Number(goalSettings.targetWeight)) && Number(goalSettings.startWeight) > Number(goalSettings.targetWeight) ? `${Number(goalSettings.startWeight) - Number(goalSettings.targetWeight)} lbs down · ` : ""}{goalSettings.lbsPerWeek !== "TBD" ? `${goalSettings.lbsPerWeek} lbs per week` : "pace TBD"}{goalSettings.scanDate && goalSettings.scanDate !== "TBD" ? ` · InBody scan ${goalSettings.scanDate}` : ""}</p>
       </div>
 
       <div className="bg-white rounded-2xl p-5 shadow-sm border border-stone-200">
